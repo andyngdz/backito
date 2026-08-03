@@ -1,4 +1,5 @@
 use super::{CliError, ExitStatus};
+use crate::features::init::InitError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
@@ -29,8 +30,21 @@ fn a_missing_config_tells_the_user_how_to_supply_one() {
     });
 
     let hint = failure.hint().expect("this failure must carry a hint");
-    assert!(hint.contains("backito.toml"));
+    // Naming the command beats naming the file: there is a command that writes
+    // it, so the user does not have to work out its contents themselves.
+    assert!(hint.contains("backito init"));
     assert!(hint.contains("--config"));
+}
+
+#[test]
+fn an_existing_config_is_not_reported_as_a_reason_to_run_init_again() {
+    let failure = CliError::Init(InitError::ConfigExists {
+        path: "backito.toml".into(),
+    });
+
+    let hint = failure.hint().expect("this failure must carry a hint");
+    assert!(hint.contains("--force"));
+    assert!(hint.contains("edit"));
 }
 
 #[test]

@@ -28,6 +28,21 @@ pub struct Cli {
 /// The commands `backito` offers.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Write a starter backito.toml here and keep it out of git.
+    ///
+    /// Run this once per project, then open the file and fill in the endpoint
+    /// and bucket. The config names a bucket and an S3 endpoint, so it is added
+    /// to .gitignore rather than committed.
+    ///
+    /// Examples:
+    ///   backito init
+    ///   backito init --force
+    Init {
+        /// Replace an existing backito.toml instead of refusing.
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Dump the database and upload the archive.
     ///
     /// Prints the stored object key on stdout. Progress goes to stderr, so the
