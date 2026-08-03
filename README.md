@@ -127,12 +127,25 @@ interactive prompt: a prompt that can hang a cron job is worse than a flag.
 ## Scheduling
 
 ```bash
-0 3 * * *  cd /path/to/project && backito backup --quiet
-0 4 * * 0  cd /path/to/project && backito verify --quiet
+PATH=/home/you/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+
+0 3 * * *  cd /path/to/project && backito backup
+0 4 * * 0  cd /path/to/project && flock -n /tmp/backito.lock backito verify
 ```
 
-`--quiet` drops progress but keeps warnings and errors, so a silent run means a
-clean one.
+No quiet flag is needed: the progress display renders nothing when stderr is not
+a terminal, so a scheduled run is silent unless something went wrong — and then
+cron mails you the warning or error. A silent run means a clean one.
+
+Three things cron gets wrong by default:
+
+- **PATH is minimal.** `backito` calls `docker`, and is itself usually in
+  `~/.cargo/bin`. Set `PATH` at the top of the crontab, as above.
+- **The working directory is `$HOME`.** `backito` reads `backito.toml` from the
+  current directory, so `cd` first or pass `--config /absolute/path`.
+- **Overlapping runs collide.** The scratch and inspect containers have fixed
+  names, and starting one removes a container of the same name. `flock` keeps a
+  long verify from being cut short by the next backup.
 
 ## License
 
