@@ -6,6 +6,10 @@ use crate::features::backup::BackupError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
+use crate::infra::object_store::ObjectStoreError;
+
+/// Status the store answers with for a key that is not in the bucket.
+const HTTP_NOT_FOUND: u16 = 404;
 
 /// How a command ended, as the shell sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,14 +72,38 @@ impl CliError {
             Self::Backup(BackupError::Database(_)) | Self::Restore(RestoreError::Database(_)) => {
                 Some("check the container name in backito.toml and that it is running")
             }
-            Self::Backup(BackupError::Storage(_)) | Self::Verify(VerifyError::Storage(_)) => {
-                Some("check the bucket name, endpoint, and that the credential covers this bucket")
-            }
+            Self::Backup(BackupError::Storage(failure))
+            | Self::Verify(VerifyError::Storage(failure))
+            | Self::Restore(RestoreError::Storage(failure)) => Some(Self::storage_hint(failure)),
             Self::Config(ConfigError::ParseFile { .. })
             | Self::Backup(_)
             | Self::Verify(_)
             | Self::Restore(_)
             | Self::WorkingDirectory { .. } => None,
+        }
+    }
+
+    /// The next step for a store failure.
+    ///
+    /// A missing key is not a misconfigured bucket: the request was authorised
+    /// and answered, so pointing the user at credentials sends them after the
+    /// wrong thing.
+    fn storage_hint(failure: &ObjectStoreError) -> &'static str {
+        match failure {
+            ObjectStoreError::Status {
+                status: HTTP_NOT_FOUND,
+                ..
+            } => {
+                "no object at that key -- list the bucket to see which archives exist, \
+                  or drop --archive to use the newest"
+            }
+            ObjectStoreError::Status { .. }
+            | ObjectStoreError::Configure { .. }
+            | ObjectStoreError::Request { .. }
+            | ObjectStoreError::LocalFile { .. }
+            | ObjectStoreError::NoArchives { .. } => {
+                "check the bucket name, endpoint, and that the credential covers this bucket"
+            }
         }
     }
 }
