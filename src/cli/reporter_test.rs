@@ -8,9 +8,11 @@ fn byte_counts_render_through_the_progress_crate() {
 }
 
 #[test]
-fn a_quiet_reporter_still_accepts_every_event() {
-    // --quiet must change what is drawn, never what the services may call.
-    let reporter = TerminalReporter::new(true);
+fn the_reporter_accepts_every_event_a_service_can_send() {
+    // Tests capture stderr, so this asserts the reporter survives the full
+    // event sequence rather than what it drew. What reaches a terminal is
+    // decided by indicatif, which renders nothing without a TTY.
+    let reporter = TerminalReporter::new();
 
     reporter.step_started(Step::Dump);
     reporter.transfer_started(Some(100));
@@ -24,7 +26,7 @@ fn a_quiet_reporter_still_accepts_every_event() {
 async fn the_metered_reader_passes_bytes_through_unchanged() {
     use tokio::io::AsyncReadExt;
 
-    let reporter = TerminalReporter::new(true);
+    let reporter = TerminalReporter::new();
     reporter.transfer_started(Some(8));
     let wrap = reporter.metered_reader();
 

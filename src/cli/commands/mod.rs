@@ -28,22 +28,19 @@ struct Context {
 /// that fixes a missing config the command a missing config blocks.
 pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
     let Cli {
-        config,
-        quiet,
-        command,
-        ..
+        config, command, ..
     } = cli;
 
     match command {
         Command::Init { force } => init::run(force.into()),
 
         Command::Backup { keep } => {
-            let context = load(config.as_deref(), quiet)?;
+            let context = load(config.as_deref())?;
             backup::run(&context.settings, keep.into(), context.observer).await
         }
 
         Command::Verify { archive } => {
-            let context = load(config.as_deref(), quiet)?;
+            let context = load(config.as_deref())?;
             verify::run(&context.settings, archive, context.observer).await
         }
 
@@ -52,7 +49,7 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
             archive,
             force,
         } => {
-            let context = load(config.as_deref(), quiet)?;
+            let context = load(config.as_deref())?;
             restore::run(
                 &context.settings,
                 into_container,
@@ -66,9 +63,9 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
 }
 
 /// Reads configuration and builds the progress reporter.
-fn load(config: Option<&Path>, quiet: bool) -> Result<Context, CliError> {
+fn load(config: Option<&Path>) -> Result<Context, CliError> {
     Ok(Context {
         settings: Settings::load(config)?,
-        observer: Arc::new(TerminalReporter::new(quiet)),
+        observer: Arc::new(TerminalReporter::new()),
     })
 }

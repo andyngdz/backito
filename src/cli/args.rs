@@ -12,10 +12,6 @@ pub struct Cli {
     #[arg(long, short, global = true, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Suppress progress output. Warnings and errors still print.
-    #[arg(long, short, global = true)]
-    pub quiet: bool,
-
     /// Print internal logs to stderr, for diagnosing a failure.
     #[arg(long, short, global = true)]
     pub verbose: bool,

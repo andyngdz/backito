@@ -30,17 +30,20 @@ const DONE_MARK: &str = "✓";
 const WARN_MARK: &str = "!";
 
 /// Draws steps as spinner lines, and transfers as a byte bar.
+///
+/// There is no quiet mode. Progress already suppresses itself when stderr is
+/// not a terminal, which is the case a scheduled run cares about, so a flag
+/// would only be able to hide the warnings and errors that a cron mail exists
+/// to deliver.
 pub struct TerminalReporter {
     bar: Mutex<ProgressBar>,
-    quiet: bool,
 }
 
 impl TerminalReporter {
-    /// Builds a reporter. `quiet` suppresses everything except warnings.
-    pub fn new(quiet: bool) -> Self {
+    /// Builds a reporter drawing to stderr.
+    pub fn new() -> Self {
         Self {
             bar: Mutex::new(ProgressBar::hidden()),
-            quiet,
         }
     }
 
@@ -52,13 +55,10 @@ impl TerminalReporter {
         }
     }
 
-    /// The draw target: stderr when showing progress, hidden when quiet.
+    /// The draw target. `indicatif` renders nothing here when stderr is not a
+    /// terminal, so a scheduled run needs no flag to stay clean.
     fn target(&self) -> ProgressDrawTarget {
-        if self.quiet {
-            ProgressDrawTarget::hidden()
-        } else {
-            ProgressDrawTarget::stderr()
-        }
+        ProgressDrawTarget::stderr()
     }
 }
 
@@ -118,8 +118,6 @@ impl ProgressObserver for TerminalReporter {
     }
 
     fn warn(&self, message: &str) {
-        // Warnings survive --quiet: they describe state the user may need to
-        // clean up, which is not progress noise.
         // A poisoned lock means another thread panicked mid-draw; the warning
         // still has to reach the user, so take the inner bar either way.
         let current = self
