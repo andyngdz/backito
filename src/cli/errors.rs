@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 use crate::features::backup::BackupError;
+use crate::features::init::InitError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
@@ -50,6 +51,10 @@ pub enum CliError {
     #[error("{0}")]
     Restore(#[from] RestoreError),
 
+    /// A project could not be initialised.
+    #[error("{0}")]
+    Init(#[from] InitError),
+
     /// A working directory could not be created.
     #[error("create working directory: {source}")]
     WorkingDirectory {
@@ -63,7 +68,10 @@ impl CliError {
     pub fn hint(&self) -> Option<&'static str> {
         match self {
             Self::Config(ConfigError::ReadFile { .. }) => {
-                Some("create backito.toml, or pass --config with its path")
+                Some("run `backito init` here to write one, or pass --config with its path")
+            }
+            Self::Init(InitError::ConfigExists { .. }) => {
+                Some("edit the existing file, or re-run with --force to replace it")
             }
             Self::Config(ConfigError::MissingCredential { .. }) => Some(
                 "export BACKITO_ACCESS_KEY_ID and BACKITO_SECRET_ACCESS_KEY, \
@@ -79,6 +87,7 @@ impl CliError {
             | Self::Backup(_)
             | Self::Verify(_)
             | Self::Restore(_)
+            | Self::Init(_)
             | Self::WorkingDirectory { .. } => None,
         }
     }

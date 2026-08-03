@@ -19,8 +19,20 @@ matches the server's.
 
 ## Configure
 
-Put `backito.toml` beside your project and commit it. It names the database and
-the bucket, and holds no secrets:
+Run this once per project:
+
+```bash
+cd your-project
+backito init
+```
+
+It writes `backito.toml` and adds it to `.gitignore`, then tells you what is
+left to fill in. Re-running refuses to clobber your file unless you pass
+`--force`.
+
+The config is gitignored on purpose: an R2 endpoint carries your account id, so
+it is per-machine setup rather than shared source. Open it and fill in
+`endpoint` and `bucket`:
 
 ```toml
 [database]
@@ -50,6 +62,7 @@ scoped token is enough.
 ## Use
 
 ```bash
+backito init              # write backito.toml and gitignore it
 backito backup            # dump, check, hash, upload
 backito verify            # prove the newest archive restores
 backito restore --force   # load an archive into a real database

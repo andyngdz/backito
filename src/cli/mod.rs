@@ -10,26 +10,19 @@ mod errors;
 mod reporter;
 
 use clap::Parser;
-use std::sync::Arc;
 
 pub use args::Cli;
 pub use dto::CommandReport;
 pub use errors::{CliError, ExitStatus};
 
-use crate::features::progress::ProgressObserver;
-use crate::infra::config::Settings;
 use crate::infra::logging::{LogDetail, install};
-use reporter::TerminalReporter;
 
 /// Parses arguments and runs the requested command.
 pub async fn run() -> Result<CommandReport, CliError> {
     let cli = Cli::parse();
     install(log_detail(&cli));
 
-    let observer: Arc<dyn ProgressObserver> = Arc::new(TerminalReporter::new(cli.quiet));
-    let settings = Settings::load(cli.config.as_deref())?;
-
-    commands::dispatch(cli.command, &settings, observer).await
+    commands::dispatch(cli).await
 }
 
 /// How much internal detail this invocation asked for.
