@@ -1,0 +1,184 @@
+//! Thin wrapper over the `docker` CLI: run a command in a container, start a
+//! throwaway one, remove it.
+//!
+//! Every argument is passed as a separate process argument -- no shell string is
+//! ever assembled, so a container or database name cannot become shell syntax.
+
+use std::process::Stdio;
+use tokio::process::Command;
+
+use super::DockerError;
+
+/// The `docker` subcommands this tool drives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockerSubcommand {
+    /// Read container state.
+    Inspect,
+    /// Start a container.
+    Run,
+    /// Remove a container.
+    Rm,
+    /// Execute a program inside a running container.
+    Exec,
+}
+
+impl DockerSubcommand {
+    /// The literal argument passed to `docker`.
+    pub fn as_arg(self) -> &'static str {
+        match self {
+            Self::Inspect => "inspect",
+            Self::Run => "run",
+            Self::Rm => "rm",
+            Self::Exec => "exec",
+        }
+    }
+}
+
+/// The `docker` binary this tool drives.
+pub const DOCKER_BIN: &str = "docker";
+
+/// Flag naming a container on `docker run`.
+pub const NAME_FLAG: &str = "--name";
+
+/// `pg_isready`, the readiness probe run inside a container.
+const PG_ISREADY: &str = "pg_isready";
+
+/// How long to wait for a freshly started container to accept connections.
+const READY_ATTEMPTS: u32 = 60;
+
+/// Delay between readiness probes.
+const READY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Bytes of stderr kept in an error message.
+const STDERR_KEEP_BYTES: usize = 2000;
+
+/// Runs `docker` with `args`, returning stdout on success.
+pub async fn run_docker(operation: &str, args: &[&str]) -> Result<Vec<u8>, DockerError> {
+    let output = Command::new(DOCKER_BIN)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .map_err(|source| DockerError::Spawn {
+            operation: operation.to_owned(),
+            source,
+        })?;
+
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+
+    Err(DockerError::Exit {
+        operation: operation.to_owned(),
+        status: output.status.to_string(),
+        stderr: trailing_stderr(&output.stderr),
+    })
+}
+
+/// Returns true when `container` exists and is running.
+pub async fn is_running(container: &str) -> Result<bool, DockerError> {
+    let subcommand = DockerSubcommand::Inspect.as_arg();
+    let inspected = run_docker(
+        subcommand,
+        &[subcommand, "-f", "{{.State.Running}}", container],
+    )
+    .await;
+
+    match inspected {
+        Ok(stdout) => Ok(String::from_utf8_lossy(&stdout).trim() == "true"),
+        // `docker inspect` exits non-zero for an unknown container, which is a
+        // "not running" answer rather than an infrastructure failure.
+        Err(DockerError::Exit { .. }) => Ok(false),
+        Err(other) => Err(other),
+    }
+}
+
+/// Fails unless `container` is running, so a command stops before it does work
+/// that cannot land.
+pub async fn require_running(container: &str) -> Result<(), DockerError> {
+    if is_running(container).await? {
+        return Ok(());
+    }
+    Err(DockerError::ContainerNotRunning {
+        container: container.to_owned(),
+    })
+}
+
+/// Starts a throwaway Postgres container with no volume and no published port,
+/// so removing it destroys everything it held and nothing on the host can
+/// mistake it for a real database.
+pub async fn start_throwaway(container: &str, image: &str) -> Result<(), DockerError> {
+    remove(container).await?;
+    let subcommand = DockerSubcommand::Run.as_arg();
+    run_docker(
+        subcommand,
+        &[
+            subcommand,
+            "-d",
+            NAME_FLAG,
+            container,
+            "-e",
+            "POSTGRES_PASSWORD=throwaway",
+            image,
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Waits until `container` reports ready for connections.
+pub async fn wait_ready(container: &str, user: &str) -> Result<(), DockerError> {
+    for _ in 0..READY_ATTEMPTS {
+        let probe = run_docker(
+            PG_ISREADY,
+            &[
+                DockerSubcommand::Exec.as_arg(),
+                container,
+                PG_ISREADY,
+                "-U",
+                user,
+                "-h",
+                "localhost",
+            ],
+        )
+        .await;
+        if probe.is_ok() {
+            return Ok(());
+        }
+        tokio::time::sleep(READY_INTERVAL).await;
+    }
+
+    Err(DockerError::ContainerNotRunning {
+        container: container.to_owned(),
+    })
+}
+
+/// Removes `container`, treating "no such container" as already removed.
+pub async fn remove(container: &str) -> Result<(), DockerError> {
+    let subcommand = DockerSubcommand::Rm.as_arg();
+    match run_docker(subcommand, &[subcommand, "-f", container]).await {
+        Ok(_) | Err(DockerError::Exit { .. }) => Ok(()),
+        Err(other) => Err(other),
+    }
+}
+
+/// Keeps the tail of stderr, which is where the useful line is when a tool
+/// prints a long preamble first. Cuts on a char boundary so the message stays
+/// valid UTF-8.
+pub fn trailing_stderr(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let trimmed = text.trim();
+    if trimmed.len() <= STDERR_KEEP_BYTES {
+        return trimmed.to_owned();
+    }
+
+    let cut_from = trimmed.len() - STDERR_KEEP_BYTES;
+    let boundary = (cut_from..trimmed.len())
+        .find(|index| trimmed.is_char_boundary(*index))
+        .unwrap_or(trimmed.len());
+    trimmed[boundary..].to_owned()
+}
+
+#[cfg(test)]
+#[path = "container_test.rs"]
+mod container_test;

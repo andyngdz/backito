@@ -1,0 +1,40 @@
+# backito.toml -- commit this file. It says WHICH database and bucket a project
+# backs up, and holds no secrets.
+#
+# Credentials come from the environment, so the same file works under dotenvx,
+# a CI secret store, or a plain export:
+#
+#   BACKITO_ACCESS_KEY_ID
+#   BACKITO_SECRET_ACCESS_KEY
+
+[database]
+# Short name used to build archive keys: app-backup-20260803-0942.dump
+label = "app"
+
+# Docker container running Postgres. pg_dump runs inside it, so the client
+# binary always matches the server version and the host needs no Postgres.
+container = "app-db"
+
+# Database to dump.
+name = "postgres"
+
+# Role to connect as. Inside the container this authenticates over the unix
+# socket, so no password is involved. Defaults to "postgres".
+user = "postgres"
+
+# Image used for the throwaway database `backito verify` restores into.
+# Must be the same major version the container above serves, or the restore
+# will not start.
+image = "postgres:17"
+
+[storage]
+# S3-compatible endpoint. For Cloudflare R2:
+#   https://<account-id>.r2.cloudflarestorage.com
+endpoint = "https://<account-id>.r2.cloudflarestorage.com"
+
+# Bucket that holds archives. Give it its own credential: a token scoped to
+# this one bucket cannot damage anything else if it leaks.
+bucket = "app-database-backups"
+
+# Region label. Services that ignore regions (R2 among them) want "auto".
+region = "auto"
