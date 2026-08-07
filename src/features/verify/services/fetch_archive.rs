@@ -8,7 +8,7 @@ use super::super::{ChecksumOutcome, VerifyError};
 use crate::domain::{ArchiveDigest, ArchiveName};
 use crate::features::backup::digest_file;
 use crate::features::progress::{ProgressObserver, Step};
-use crate::infra::object_store::{ObjectStore, ObjectStoreError};
+use crate::infra::object_store::ObjectStore;
 
 /// Downloads `archive` to `destination` and compares it to its stored digest.
 pub async fn fetch_archive(
@@ -43,10 +43,10 @@ async fn compare_to_sidecar(
     let sidecar = match store.download_text(&archive.checksum_key()).await {
         Ok(body) => body,
         // An archive uploaded before sidecars existed, or one whose sidecar was
-        // removed: reported rather than treated as a match.
-        Err(ObjectStoreError::Status { .. }) | Err(ObjectStoreError::Request { .. }) => {
-            return Ok(ChecksumOutcome::Absent);
-        }
+        // removed: reported rather than treated as a match. Only a key the store
+        // says is absent counts; a refused or unreachable request would otherwise
+        // be reported as "no checksum stored" for a sidecar that is right there.
+        Err(failure) if failure.is_missing_object() => return Ok(ChecksumOutcome::Absent),
         Err(other) => return Err(other.into()),
     };
 
