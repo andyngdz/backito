@@ -5,12 +5,27 @@ use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
 use crate::infra::object_store::ObjectStoreError;
 
-/// Builds a store failure that answered with `status`.
-fn store_status(status: u16) -> ObjectStoreError {
-    ObjectStoreError::Status {
+/// Builds a store failure for a key that is not in the bucket.
+fn store_missing_key() -> ObjectStoreError {
+    ObjectStoreError::Request {
         operation: "download".to_owned(),
         key: "app-backup-20260803-0942.dump".to_owned(),
-        status,
+        source: Box::new(object_store::Error::NotFound {
+            path: "app-backup-20260803-0942.dump".to_owned(),
+            source: "no such key".into(),
+        }),
+    }
+}
+
+/// Builds a store failure for a request the bucket refused.
+fn store_refused() -> ObjectStoreError {
+    ObjectStoreError::Request {
+        operation: "download".to_owned(),
+        key: "app-backup-20260803-0942.dump".to_owned(),
+        source: Box::new(object_store::Error::PermissionDenied {
+            path: "app-backup-20260803-0942.dump".to_owned(),
+            source: "denied".into(),
+        }),
     }
 }
 
@@ -62,7 +77,7 @@ fn a_missing_credential_names_both_variables() {
 fn a_missing_archive_points_at_the_bucket_contents_not_the_credential() {
     // The bucket and credential are fine here -- only the key is absent, so the
     // hint must not send the user auditing access.
-    let failure = CliError::Verify(VerifyError::Storage(store_status(404)));
+    let failure = CliError::Verify(VerifyError::Storage(store_missing_key()));
 
     let hint = failure.hint().expect("this failure must carry a hint");
     assert!(hint.contains("list the bucket"));
@@ -72,7 +87,7 @@ fn a_missing_archive_points_at_the_bucket_contents_not_the_credential() {
 
 #[test]
 fn a_refused_request_still_points_at_the_bucket_and_credential() {
-    let failure = CliError::Verify(VerifyError::Storage(store_status(403)));
+    let failure = CliError::Verify(VerifyError::Storage(store_refused()));
 
     let hint = failure.hint().expect("this failure must carry a hint");
     assert!(hint.contains("credential"));
@@ -81,7 +96,7 @@ fn a_refused_request_still_points_at_the_bucket_and_credential() {
 
 #[test]
 fn a_restore_from_a_missing_archive_carries_the_same_hint() {
-    let failure = CliError::Restore(RestoreError::Storage(store_status(404)));
+    let failure = CliError::Restore(RestoreError::Storage(store_missing_key()));
 
     let hint = failure.hint().expect("this failure must carry a hint");
     assert!(hint.contains("list the bucket"));

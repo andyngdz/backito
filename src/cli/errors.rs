@@ -9,9 +9,6 @@ use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
 use crate::infra::object_store::ObjectStoreError;
 
-/// Status the store answers with for a key that is not in the bucket.
-const HTTP_NOT_FOUND: u16 = 404;
-
 /// How a command ended, as the shell sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -98,17 +95,15 @@ impl CliError {
     /// and answered, so pointing the user at credentials sends them after the
     /// wrong thing.
     fn storage_hint(failure: &ObjectStoreError) -> &'static str {
+        if failure.is_missing_object() {
+            return "no object at that key -- list the bucket to see which archives exist, \
+                  or drop --archive to use the newest";
+        }
+
         match failure {
-            ObjectStoreError::Status {
-                status: HTTP_NOT_FOUND,
-                ..
-            } => {
-                "no object at that key -- list the bucket to see which archives exist, \
-                  or drop --archive to use the newest"
-            }
-            ObjectStoreError::Status { .. }
-            | ObjectStoreError::Configure { .. }
+            ObjectStoreError::Configure { .. }
             | ObjectStoreError::Request { .. }
+            | ObjectStoreError::LocalStream { .. }
             | ObjectStoreError::LocalFile { .. }
             | ObjectStoreError::NoArchives { .. } => {
                 "check the bucket name, endpoint, and that the credential covers this bucket"

@@ -4,8 +4,12 @@
 //! bucket is denied `CreateBucket` and `ListBuckets`, so a probe would turn a
 //! working configuration into a 403 before the first byte moves.
 
-use s3::creds::Credentials;
-use s3::{Bucket, Region};
+use futures::TryStreamExt;
+// `list` sits on the trait itself; the convenience wrappers this crate uses
+// elsewhere are on ObjectStoreExt. Imported anonymously so it cannot collide
+// with this module's own ObjectStore.
+use object_store::ObjectStore as _;
+use object_store::aws::{AmazonS3, AmazonS3Builder};
 
 use super::{ObjectStoreError, StoreOperation};
 use crate::domain::ArchiveName;
@@ -13,7 +17,7 @@ use crate::infra::config::{StorageCredentials, StorageSettings};
 
 /// One bucket, addressed with path-style URLs.
 pub struct ObjectStore {
-    pub(super) bucket: Box<Bucket>,
+    pub(super) bucket: AmazonS3,
     pub(super) name: String,
 }
 
@@ -23,28 +27,20 @@ impl ObjectStore {
         settings: &StorageSettings,
         credentials: &StorageCredentials,
     ) -> Result<Self, ObjectStoreError> {
-        let region = Region::Custom {
-            region: settings.region.clone(),
-            endpoint: settings.endpoint.clone(),
-        };
-        let resolved = Credentials::new(
-            Some(&credentials.access_key_id),
-            Some(&credentials.secret_access_key),
-            None,
-            None,
-            None,
-        )
-        .map_err(|source| ObjectStoreError::Configure {
-            bucket: settings.bucket.clone(),
-            source: source.into(),
-        })?;
-
-        let bucket = Bucket::new(&settings.bucket, region, resolved)
+        // Virtual-hosted style is off because an S3-compatible endpoint is
+        // addressed as `<endpoint>/<bucket>/<key>`, not as a subdomain.
+        let bucket = AmazonS3Builder::new()
+            .with_endpoint(settings.endpoint.clone())
+            .with_bucket_name(settings.bucket.clone())
+            .with_region(settings.region.clone())
+            .with_access_key_id(credentials.access_key_id.clone())
+            .with_secret_access_key(credentials.secret_access_key.clone())
+            .with_virtual_hosted_style_request(false)
+            .build()
             .map_err(|source| ObjectStoreError::Configure {
                 bucket: settings.bucket.clone(),
-                source,
-            })?
-            .with_path_style();
+                source: Box::new(source),
+            })?;
 
         Ok(Self {
             bucket,
@@ -63,20 +59,20 @@ impl ObjectStore {
     /// bucket-scoped credential is allowed to make, so it proves the endpoint,
     /// the key, and the bucket name in one request.
     pub async fn list_keys(&self) -> Result<Vec<String>, ObjectStoreError> {
-        let pages = self
+        let objects: Vec<_> = self
             .bucket
-            .list(String::new(), None)
+            .list(None)
+            .try_collect()
             .await
             .map_err(|source| ObjectStoreError::Request {
                 operation: StoreOperation::List.as_str().to_owned(),
                 key: String::new(),
-                source,
+                source: Box::new(source),
             })?;
 
-        Ok(pages
+        Ok(objects
             .into_iter()
-            .flat_map(|page| page.contents)
-            .map(|object| object.key)
+            .map(|object| object.location.to_string())
             .collect())
     }
 
