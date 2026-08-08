@@ -7,7 +7,7 @@ use super::super::dto::CommandReport;
 use crate::domain::ArchiveName;
 use crate::features::backup::target_for;
 use crate::features::progress::ProgressObserver;
-use crate::features::restore::{RestoreAuthorisation, RestoreError, run_restore};
+use crate::features::restore::{RestoreAuthorisation, RestoreError, RestoreRequest, run_restore};
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
 
@@ -32,13 +32,18 @@ pub async fn run(
         .tempdir()
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
+    let request = RestoreRequest {
+        archive: archive.map(ArchiveName::from_key),
+        authorisation,
+        jobs: settings.database.restore_jobs,
+    };
+
     let outcome = run_restore(
         &store,
         &settings.database.label,
         &target,
         workspace.path(),
-        archive.map(ArchiveName::from_key),
-        authorisation,
+        request,
         observer,
     )
     .await?;

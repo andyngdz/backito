@@ -11,6 +11,7 @@ fn unreachable_settings() -> Settings {
             name: "postgres".to_owned(),
             user: "postgres".to_owned(),
             image: "postgres:17".to_owned(),
+            restore_jobs: 4,
         },
         storage: StorageSettings {
             endpoint: "http://127.0.0.1:1".to_owned(),

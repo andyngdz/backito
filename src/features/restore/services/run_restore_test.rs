@@ -1,4 +1,4 @@
-use super::run_restore;
+use super::{RestoreRequest, run_restore};
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::features::restore::RestoreAuthorisation;
 use crate::infra::config::{StorageCredentials, StorageSettings};
@@ -40,8 +40,11 @@ async fn the_target_is_checked_before_anything_is_downloaded() {
         "backito-test",
         &missing_target(),
         workspace.path(),
-        None,
-        RestoreAuthorisation::Forced,
+        RestoreRequest {
+            archive: None,
+            authorisation: RestoreAuthorisation::Forced,
+            jobs: 4,
+        },
         observer,
     )
     .await

@@ -6,7 +6,9 @@ mod errors;
 mod inspect_archive;
 mod postgres_cli;
 
-pub use container::{DOCKER_BIN, is_running, remove, require_running, start_throwaway, wait_ready};
+pub use container::{
+    DOCKER_BIN, is_running, remove, require_running, start_throwaway, trailing_stderr, wait_ready,
+};
 pub use errors::DockerError;
 pub use inspect_archive::count_table_data_entries;
 pub use postgres_cli::{

@@ -41,6 +41,7 @@ container = "app-db"       # docker container running Postgres
 name      = "postgres"     # database to dump
 user      = "postgres"     # role, defaults to postgres
 image     = "postgres:17"  # image `verify` restores into
+restore_jobs = 4           # pg_restore parallelism, drop to 1 for a tight target
 
 [storage]
 endpoint = "https://<account-id>.r2.cloudflarestorage.com"

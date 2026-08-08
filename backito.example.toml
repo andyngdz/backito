@@ -27,6 +27,11 @@ user = "postgres"
 # will not start.
 image = "postgres:17"
 
+# Parallel jobs pg_restore uses. Higher is faster, but each worker builds
+# indexes in its own memory, so a memory-capped container can OOM mid-restore.
+# Drop to 1 for a tight target. Defaults to 4.
+restore_jobs = 4
+
 [storage]
 # S3-compatible endpoint. For Cloudflare R2:
 #   https://<account-id>.r2.cloudflarestorage.com
