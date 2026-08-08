@@ -6,6 +6,10 @@ mod health;
 mod init;
 mod restore;
 mod verify;
+mod walg;
+mod walg_archive;
+mod walg_base;
+mod walg_entrypoint;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -45,6 +49,8 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
             let context = load(config.as_deref())?;
             daemon::run(&context.settings, context.observer).await
         }
+
+        Command::Walg(walg) => walg::run(walg, config.as_deref()).await,
 
         Command::Health => {
             let context = load(config.as_deref())?;

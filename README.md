@@ -104,6 +104,7 @@ backito verify            # prove the newest archive restores
 backito restore --force   # load an archive into a real database
 backito daemon            # back up on a schedule until stopped
 backito health            # is there a recent enough backup? exit code says
+backito walg base         # take physical base backups on a schedule
 ```
 
 `backup` prints the stored object key on stdout and nothing else, so it composes:
@@ -151,6 +152,75 @@ has been restored, not verified.
 
 Exit codes: `0` pass, `1` the command could not run, `2` verification ran and
 found a mismatch. A scheduled check can tell those apart.
+
+## Point-in-time recovery with wal-g
+
+Everything above takes logical backups: a `pg_dump` archive restores the data as
+of the moment it was taken, and anything written after that is gone. WAL
+archiving closes that window. Postgres ships each write-ahead log segment as it
+fills, and replaying those segments onto a base backup reaches any moment
+between the two.
+
+backito does not reimplement any of this. [wal-g](https://github.com/wal-g/wal-g)
+does the work; backito owns the configuration, the cadence, and the reporting.
+Add a `[walg]` section to turn it on:
+
+```toml
+[walg]
+s3_prefix     = "s3://app-walg/"   # WAL and base backups go here
+base_interval = "24h"              # how often to take a base backup
+retain_full   = 3                  # base backups kept
+# endpoint    = "..."              # defaults to [storage].endpoint
+# data_dir    = "/var/lib/postgresql/data"
+# binary      = "wal-g"
+```
+
+WAL storage has its own credentials, because it should have its own bucket:
+
+```bash
+export BACKITO_WALG_ACCESS_KEY_ID='...'
+export BACKITO_WALG_SECRET_ACCESS_KEY='...'
+```
+
+**Give each cluster its own prefix.** WAL segments are named after the LSN, and
+two clusters both produce those names. Point two clusters at one prefix and each
+overwrites the other's archive, which is only discovered when a restore is
+attempted. Logical archives need no such split: their keys carry the label, so
+`app-backup-*` and `app-prod-backup-*` share a bucket happily.
+
+Without a `[walg]` section, none of this runs and nothing has to be configured.
+
+### Three commands
+
+```bash
+backito walg base       # base backups on base_interval, then retain_full
+backito walg archive %p # one WAL segment; Postgres runs this
+backito walg entrypoint --fragment <file> -- <program> <args>
+```
+
+`base` is the half that makes the other half useful: WAL segments replay onto a
+base backup from the same cluster, so a stream with no base restores nothing. It
+asks wal-g when the last base backup landed before taking another, so a restart
+does not take a full physical copy of the cluster it already has.
+
+`archive` is what Postgres calls as `archive_command`. Without a `[walg]`
+section it exits 0 rather than failing: Postgres reads a non-zero exit as "not
+archived, keep the segment", and a development container with nowhere to put WAL
+would fill its disk with segments it can never recycle.
+
+`entrypoint` writes the archiving settings into a file Postgres reads, then
+replaces itself with the image's own entrypoint. Put it in a Dockerfile:
+
+```dockerfile
+ENTRYPOINT ["backito", "walg", "entrypoint", \
+            "--fragment", "/etc/postgresql-custom/wal-g.conf", \
+            "--", "docker-entrypoint.sh", "postgres"]
+```
+
+It execs rather than supervises, so Postgres keeps PID 1 and signals reach it
+unchanged. The `archive_command` it writes names this executable and this config
+by absolute path, because Postgres runs that command from its own working
+directory with a minimal environment.
 
 ## Safety
 

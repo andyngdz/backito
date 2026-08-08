@@ -59,3 +59,27 @@ bucket = "app-database-backups"
 
 # Region label. Services that ignore regions (R2 among them) want "auto".
 region = "auto"
+
+# Physical backups, for point-in-time recovery. Leave this section out and none
+# of it runs: the logical backups above are independent of it.
+#
+# [walg]
+# Where WAL segments and base backups go. Give each cluster its own prefix:
+# segments are named after the LSN, which two clusters both produce, so a shared
+# prefix means each overwrites the other's archive.
+# s3_prefix = "s3://app-walg/"
+#
+# How often to take a base backup, and how many to keep. Each is a full copy of
+# the cluster, so retain_full is a disk bill rather than a retention policy.
+# base_interval = "24h"
+# retain_full = 3
+#
+# Optional. The endpoint defaults to [storage].endpoint above, since it is
+# account-level and only the bucket and its token differ.
+# endpoint = "https://<account-id>.r2.cloudflarestorage.com"
+# data_dir = "/var/lib/postgresql/data"
+# binary = "wal-g"
+#
+# WAL storage has its own credentials, from the environment:
+#   BACKITO_WALG_ACCESS_KEY_ID
+#   BACKITO_WALG_SECRET_ACCESS_KEY

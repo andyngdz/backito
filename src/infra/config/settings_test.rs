@@ -4,9 +4,7 @@ use indoc::indoc;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-/// The credential variables are process-global, so these tests take turns.
-/// Without this they race: one clears what another just set.
-static ENV_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+use crate::infra::config::ENV_TURN;
 
 const ACCESS_KEY_VAR: &str = "BACKITO_ACCESS_KEY_ID";
 const SECRET_KEY_VAR: &str = "BACKITO_SECRET_ACCESS_KEY";

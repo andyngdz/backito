@@ -2,6 +2,7 @@ use super::run;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::infra::config::ContainerSource;
 use crate::infra::config::ScheduleSettings;
+use crate::infra::config::WalgMode;
 use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
 use std::sync::Arc;
 
@@ -25,6 +26,7 @@ fn unreachable_settings() -> Settings {
             secret_access_key: "test-secret-key".to_owned(),
         },
         schedule: ScheduleSettings::default(),
+        walg: WalgMode::Disabled,
     }
 }
 
