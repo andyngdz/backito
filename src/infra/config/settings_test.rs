@@ -18,6 +18,7 @@ fn full_config() -> &'static str {
         name = "postgres"
         user = "postgres"
         image = "postgres:17"
+        restore_jobs = 1
 
         [storage]
         endpoint = "https://account.r2.cloudflarestorage.com"
@@ -77,6 +78,7 @@ fn full_config_loads_every_field() {
     clear_credentials();
     assert_eq!(settings.database.label, "app");
     assert_eq!(settings.database.container, "app-db");
+    assert_eq!(settings.database.restore_jobs, 1);
     assert_eq!(settings.storage.bucket, "app-database-backups");
     assert_eq!(settings.credentials.access_key_id, "test-access-key");
 }
@@ -93,6 +95,7 @@ fn user_and_region_fall_back_to_postgres_and_auto() {
 
     clear_credentials();
     assert_eq!(settings.database.user, "postgres");
+    assert_eq!(settings.database.restore_jobs, 4);
     assert_eq!(settings.storage.region, "auto");
 }
 

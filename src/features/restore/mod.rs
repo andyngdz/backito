@@ -6,4 +6,4 @@ mod services;
 
 pub use domain::RestoreOutcome;
 pub use errors::RestoreError;
-pub use services::{RestoreAuthorisation, run_restore};
+pub use services::{RestoreAuthorisation, RestoreRequest, run_restore};

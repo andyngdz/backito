@@ -46,6 +46,11 @@ pub struct DatabaseSettings {
     /// Container image used to build the throwaway database that `verify`
     /// restores into. Must be the same major version as `container` serves.
     pub image: String,
+    /// Parallel jobs `pg_restore` uses when restoring. Parallel restore is
+    /// faster, but each worker builds indexes in its own memory, so a
+    /// memory-capped container can OOM mid-restore. Drop to 1 for tight targets.
+    #[serde(default = "default_restore_jobs")]
+    pub restore_jobs: u8,
 }
 
 /// The storage half of `backito.toml`.
@@ -82,6 +87,12 @@ fn default_user() -> String {
 
 fn default_region() -> String {
     "auto".to_owned()
+}
+
+/// Parallel restore jobs kept when the config omits `restore_jobs`. Matches the
+/// value backito used before the knob existed.
+fn default_restore_jobs() -> u8 {
+    4
 }
 
 impl Settings {
