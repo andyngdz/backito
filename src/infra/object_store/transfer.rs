@@ -92,6 +92,21 @@ impl ObjectStore {
         Ok(())
     }
 
+    /// Removes `key`.
+    ///
+    /// Retention lives here rather than in a shell wrapper around rclone,
+    /// because the credential, the endpoint and the bucket are already settled
+    /// on this side and duplicating them is how the two drift apart.
+    pub async fn delete(&self, key: &str) -> Result<(), ObjectStoreError> {
+        let location = ObjectPath::from(key);
+        self.bucket
+            .delete(&location)
+            .await
+            .map_err(|source| request_failure(StoreOperation::Delete, key, source))?;
+
+        Ok(())
+    }
+
     /// Opens `path` and uploads it to `key`.
     ///
     /// `wrap_reader` lets the caller interpose a progress reporter without this

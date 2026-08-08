@@ -88,4 +88,26 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Back up on a schedule until stopped, pruning and verifying as configured.
+    ///
+    /// Reads its cadence from [schedule] in the config. On start it asks the
+    /// bucket when the last backup landed and waits out the remainder, so a
+    /// restarted container does not dump the database again.
+    ///
+    /// Examples:
+    ///   backito daemon
+    ///   backito daemon --config prod.toml
+    Daemon,
+
+    /// Report whether a recent enough backup exists. Exits 1 when none does.
+    ///
+    /// Built for a container healthcheck. It asks the bucket rather than a local
+    /// marker file, so a restarted container cannot report itself healthy just
+    /// by having forgotten. A backup is recent enough while it is younger than
+    /// two [schedule] backup_interval periods.
+    ///
+    /// Examples:
+    ///   backito health
+    Health,
 }

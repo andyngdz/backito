@@ -40,6 +40,11 @@ pub trait ProgressObserver: Send + Sync {
     /// scratch container left behind by an earlier interrupted run.
     fn warn(&self, message: &str);
 
+    /// Routine progress from a long-running command, such as the daemon saying
+    /// what a pass did. Defaulted to silence: a one-shot command already reports
+    /// through the step callbacks and would only repeat itself.
+    fn info(&self, _message: &str) {}
+
     /// Returns a wrapper that meters an upload source.
     fn metered_reader(&self) -> MeteredReader;
 }

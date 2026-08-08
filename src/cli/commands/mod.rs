@@ -1,6 +1,8 @@
 //! One file per command: map arguments, call a feature, hand back a report.
 
 mod backup;
+mod daemon;
+mod health;
 mod init;
 mod restore;
 mod verify;
@@ -37,6 +39,16 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
         Command::Backup { keep } => {
             let context = load(config.as_deref())?;
             backup::run(&context.settings, keep.into(), context.observer).await
+        }
+
+        Command::Daemon => {
+            let context = load(config.as_deref())?;
+            daemon::run(&context.settings, context.observer).await
+        }
+
+        Command::Health => {
+            let context = load(config.as_deref())?;
+            health::run(&context.settings, context.observer).await
         }
 
         Command::Verify { archive } => {

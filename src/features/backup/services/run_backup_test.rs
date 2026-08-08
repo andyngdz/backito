@@ -1,5 +1,6 @@
 use super::target_for;
 use crate::infra::config::ContainerSource;
+use crate::infra::config::ScheduleSettings;
 use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
 
 fn settings() -> Settings {
@@ -21,6 +22,7 @@ fn settings() -> Settings {
             access_key_id: "test-access-key".to_owned(),
             secret_access_key: "test-secret-key".to_owned(),
         },
+        schedule: ScheduleSettings::default(),
     }
 }
 

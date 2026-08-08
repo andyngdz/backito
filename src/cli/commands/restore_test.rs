@@ -2,6 +2,7 @@ use super::run;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::features::restore::RestoreAuthorisation;
 use crate::infra::config::ContainerSource;
+use crate::infra::config::ScheduleSettings;
 use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ fn settings() -> Settings {
             access_key_id: "test-access-key".to_owned(),
             secret_access_key: "test-secret-key".to_owned(),
         },
+        schedule: ScheduleSettings::default(),
     }
 }
 

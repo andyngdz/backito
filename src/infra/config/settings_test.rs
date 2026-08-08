@@ -1,5 +1,5 @@
-use super::ContainerSource;
 use super::{ConfigError, Settings};
+use crate::infra::config::{ContainerSource, ScheduleSettings};
 use indoc::indoc;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -241,4 +241,85 @@ fn naming_neither_a_container_nor_a_service_is_refused() {
 
     clear_credentials();
     assert!(matches!(failure, ConfigError::ContainerUnspecified));
+}
+
+#[test]
+fn a_config_without_a_schedule_table_gets_the_defaults() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(minimal_config());
+    set_credentials("test-access-key");
+
+    let settings = Settings::load(Some(config.path())).expect("load");
+
+    clear_credentials();
+    assert_eq!(settings.schedule, ScheduleSettings::default());
+    assert_eq!(settings.schedule.backup_interval.as_secs(), 24 * 60 * 60);
+    assert_eq!(
+        settings.schedule.verify_interval.as_secs(),
+        7 * 24 * 60 * 60
+    );
+    assert_eq!(settings.schedule.retain, 7);
+}
+
+#[test]
+fn a_schedule_table_is_read_in_human_units() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        container = "app-db"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+
+        [schedule]
+        backup_interval = "6h"
+        verify_interval = "0s"
+        retain = 3
+        "#});
+    set_credentials("test-access-key");
+
+    let settings = Settings::load(Some(config.path())).expect("load");
+
+    clear_credentials();
+    assert_eq!(settings.schedule.backup_interval.as_secs(), 6 * 60 * 60);
+    assert!(settings.schedule.verify_interval.is_disabled());
+    assert_eq!(settings.schedule.retain, 3);
+}
+
+#[test]
+fn an_unreadable_interval_names_the_field_it_came_from() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        container = "app-db"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+
+        [schedule]
+        backup_interval = "every day"
+        "#});
+    set_credentials("test-access-key");
+
+    let failure = Settings::load(Some(config.path())).expect_err("not an interval");
+
+    clear_credentials();
+    assert!(
+        failure.to_string().contains("backup_interval"),
+        "the message should name the field, got: {failure}"
+    );
 }

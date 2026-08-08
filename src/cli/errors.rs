@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 use crate::features::backup::BackupError;
+use crate::features::daemon::DaemonError;
 use crate::features::init::InitError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
@@ -53,6 +54,10 @@ pub enum CliError {
     #[error("{0}")]
     Init(#[from] InitError),
 
+    /// The scheduling loop could not start or could not continue.
+    #[error("{0}")]
+    Daemon(#[from] DaemonError),
+
     /// The container running the database could not be identified.
     #[error("{0}")]
     Container(#[from] DockerError),
@@ -88,6 +93,9 @@ impl CliError {
             Self::Config(
                 ConfigError::ContainerOverSpecified | ConfigError::ContainerUnspecified,
             ) => Some("set exactly one of container or service under [database]"),
+            Self::Config(ConfigError::ParseInterval { .. }) => {
+                Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
+            }
             Self::Container(DockerError::NoContainerForService { .. }) => Some(
                 "check the service is up, and that container_label matches the orchestrator: \
                  com.docker.compose.service for compose, uncloud.service.name for uncloud",
@@ -98,6 +106,7 @@ impl CliError {
             | Self::Restore(_)
             | Self::Init(_)
             | Self::Container(_)
+            | Self::Daemon(_)
             | Self::WorkingDirectory { .. } => None,
         }
     }

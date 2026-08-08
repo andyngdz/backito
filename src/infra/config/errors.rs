@@ -1,6 +1,8 @@
 //! Failures raised while loading configuration.
 
 use std::path::PathBuf;
+
+use crate::domain::IntervalError;
 use thiserror::Error;
 
 /// Why configuration could not be loaded.
@@ -29,6 +31,15 @@ pub enum ConfigError {
     MissingCredential {
         /// Name of the missing variable.
         variable: String,
+    },
+
+    /// An interval in `[schedule]` could not be read.
+    #[error("read {field}: {source}")]
+    ParseInterval {
+        /// Field the interval was written in.
+        field: String,
+        /// Why the text is not an interval.
+        source: IntervalError,
     },
 
     /// `[database]` names both a container and a service.
