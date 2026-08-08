@@ -8,6 +8,8 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 use super::ConfigError;
+use super::database::{DatabaseFile, DatabaseSettings};
+use super::schedule::{ScheduleFile, ScheduleSettings};
 
 /// Default config filename looked up in the working directory.
 pub const CONFIG_FILENAME: &str = "backito.toml";
@@ -27,30 +29,9 @@ pub struct Settings {
     pub storage: StorageSettings,
     /// Credentials for `storage`, read from the environment.
     pub credentials: StorageCredentials,
-}
-
-/// The database half of `backito.toml`.
-#[derive(Debug, Clone, Deserialize)]
-pub struct DatabaseSettings {
-    /// Short name used to build archive keys, e.g. `app`.
-    pub label: String,
-    /// Docker container running Postgres. The dump runs inside it, so the
-    /// `pg_dump` binary always matches the server version.
-    pub container: String,
-    /// Database name to dump.
-    pub name: String,
-    /// Role to connect as. Inside the container this authenticates over the
-    /// unix socket, so no password is needed.
-    #[serde(default = "default_user")]
-    pub user: String,
-    /// Container image used to build the throwaway database that `verify`
-    /// restores into. Must be the same major version as `container` serves.
-    pub image: String,
-    /// Parallel jobs `pg_restore` uses when restoring. Parallel restore is
-    /// faster, but each worker builds indexes in its own memory, so a
-    /// memory-capped container can OOM mid-restore. Drop to 1 for tight targets.
-    #[serde(default = "default_restore_jobs")]
-    pub restore_jobs: u8,
+    /// Cadence for the long-running commands. Defaulted in full, so a config
+    /// written for one-shot `backup` needs no `[schedule]` table at all.
+    pub schedule: ScheduleSettings,
 }
 
 /// The storage half of `backito.toml`.
@@ -77,22 +58,14 @@ pub struct StorageCredentials {
 /// `backito.toml` as parsed, before environment credentials are attached.
 #[derive(Debug, Deserialize)]
 struct SettingsFile {
-    database: DatabaseSettings,
+    database: DatabaseFile,
     storage: StorageSettings,
-}
-
-fn default_user() -> String {
-    "postgres".to_owned()
+    #[serde(default)]
+    schedule: ScheduleFile,
 }
 
 fn default_region() -> String {
     "auto".to_owned()
-}
-
-/// Parallel restore jobs kept when the config omits `restore_jobs`. Matches the
-/// value backito used before the knob existed.
-fn default_restore_jobs() -> u8 {
-    4
 }
 
 impl Settings {
@@ -112,9 +85,10 @@ impl Settings {
             })?;
 
         Ok(Self {
-            database: parsed.database,
+            database: parsed.database.into_settings()?,
             storage: parsed.storage,
             credentials: StorageCredentials::from_env()?,
+            schedule: parsed.schedule.into_settings()?,
         })
     }
 }

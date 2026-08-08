@@ -11,6 +11,8 @@ pub enum StoreOperation {
     Download,
     /// Read an object's metadata.
     Head,
+    /// Remove an object.
+    Delete,
 }
 
 impl StoreOperation {
@@ -21,6 +23,7 @@ impl StoreOperation {
             Self::Upload => "upload",
             Self::Download => "download",
             Self::Head => "head",
+            Self::Delete => "delete",
         }
     }
 }

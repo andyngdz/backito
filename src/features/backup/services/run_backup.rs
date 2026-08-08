@@ -7,6 +7,7 @@ use super::super::{BackupError, BackupOutcome};
 use super::produce_archive::produce_archive;
 use super::publish_archive::publish_archive;
 use crate::domain::ArchiveName;
+use crate::features::container::resolve;
 use crate::features::progress::{ProgressObserver, Step};
 use crate::infra::config::{DatabaseSettings, Settings};
 use crate::infra::docker::{PostgresTarget, require_running};
@@ -23,7 +24,8 @@ pub async fn run_backup(
     utc_stamp: &str,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<BackupOutcome, BackupError> {
-    let target = target_for(&settings.database);
+    let container = resolve(&settings.database.container).await?;
+    let target = target_for(&settings.database, container);
     check_reachable(&target, store, &observer).await?;
 
     let archive = ArchiveName::new(&settings.database.label, utc_stamp);
@@ -44,10 +46,17 @@ pub async fn run_backup(
     })
 }
 
-/// Builds the connection target from configuration.
-pub fn target_for(database: &DatabaseSettings) -> PostgresTarget {
+/// Builds the connection target from configuration and an already-resolved
+/// container name.
+///
+/// The name is a parameter rather than read out of `database`, because the
+/// config may hold a service to look up instead of a fixed name and the lookup
+/// is a call to Docker. Resolving at the caller is also what lets a long-running
+/// caller resolve again on each pass, which is the reason to name a service at
+/// all.
+pub fn target_for(database: &DatabaseSettings, container: String) -> PostgresTarget {
     PostgresTarget {
-        container: database.container.clone(),
+        container,
         database: database.name.clone(),
         user: database.user.clone(),
     }

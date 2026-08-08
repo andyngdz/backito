@@ -29,6 +29,9 @@ const DONE_MARK: &str = "✓";
 /// Mark printed beside a warning.
 const WARN_MARK: &str = "!";
 
+/// Marker on a routine line from a long-running command.
+const INFO_MARK: &str = "-";
+
 /// Draws steps as spinner lines, and transfers as a byte bar.
 ///
 /// There is no quiet mode. Progress already suppresses itself when stderr is
@@ -125,6 +128,14 @@ impl ProgressObserver for TerminalReporter {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         current.println(format!("{WARN_MARK} {message}"));
+    }
+
+    fn info(&self, message: &str) {
+        let current = self
+            .bar
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        current.println(format!("{INFO_MARK} {message}"));
     }
 
     fn metered_reader(&self) -> MeteredReader {

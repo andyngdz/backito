@@ -3,10 +3,12 @@
 use thiserror::Error;
 
 use crate::features::backup::BackupError;
+use crate::features::daemon::DaemonError;
 use crate::features::init::InitError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
 use crate::infra::config::ConfigError;
+use crate::infra::docker::DockerError;
 use crate::infra::object_store::ObjectStoreError;
 
 /// How a command ended, as the shell sees it.
@@ -52,6 +54,14 @@ pub enum CliError {
     #[error("{0}")]
     Init(#[from] InitError),
 
+    /// The scheduling loop could not start or could not continue.
+    #[error("{0}")]
+    Daemon(#[from] DaemonError),
+
+    /// The container running the database could not be identified.
+    #[error("{0}")]
+    Container(#[from] DockerError),
+
     /// A working directory could not be created.
     #[error("create working directory: {source}")]
     WorkingDirectory {
@@ -80,11 +90,23 @@ impl CliError {
             Self::Backup(BackupError::Storage(failure))
             | Self::Verify(VerifyError::Storage(failure))
             | Self::Restore(RestoreError::Storage(failure)) => Some(Self::storage_hint(failure)),
+            Self::Config(
+                ConfigError::ContainerOverSpecified | ConfigError::ContainerUnspecified,
+            ) => Some("set exactly one of container or service under [database]"),
+            Self::Config(ConfigError::ParseInterval { .. }) => {
+                Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
+            }
+            Self::Container(DockerError::NoContainerForService { .. }) => Some(
+                "check the service is up, and that container_label matches the orchestrator: \
+                 com.docker.compose.service for compose, uncloud.service.name for uncloud",
+            ),
             Self::Config(ConfigError::ParseFile { .. })
             | Self::Backup(_)
             | Self::Verify(_)
             | Self::Restore(_)
             | Self::Init(_)
+            | Self::Container(_)
+            | Self::Daemon(_)
             | Self::WorkingDirectory { .. } => None,
         }
     }

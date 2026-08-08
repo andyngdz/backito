@@ -70,6 +70,22 @@ impl ArchiveName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The UTC stamp embedded in the key, e.g. `20260803-0942`.
+    ///
+    /// Read back out of the name rather than from object metadata, so asking
+    /// "when did the last backup land" costs one bucket listing instead of a
+    /// request per candidate. `None` for a key that is not one of ours, which is
+    /// the same question `belongs_to` answers and the reason this cannot guess.
+    pub fn stamp(&self) -> Option<&str> {
+        let separator = format!("-{ARCHIVE_STEM}-");
+        let extension = format!(".{}", ArchiveFile::Dump.extension());
+
+        // From the right: a label may itself contain `-backup-`, and the stamp
+        // is always the last thing before the extension.
+        let (_, after_stem) = self.0.rsplit_once(&separator)?;
+        after_stem.strip_suffix(&extension)
+    }
 }
 
 impl fmt::Display for ArchiveName {

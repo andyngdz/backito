@@ -1,6 +1,8 @@
 use super::run;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::features::restore::RestoreAuthorisation;
+use crate::infra::config::ContainerSource;
+use crate::infra::config::ScheduleSettings;
 use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
 use std::sync::Arc;
 
@@ -8,7 +10,7 @@ fn settings() -> Settings {
     Settings {
         database: DatabaseSettings {
             label: "backito-test".to_owned(),
-            container: "backito-container-that-does-not-exist".to_owned(),
+            container: ContainerSource::Named("backito-container-that-does-not-exist".to_owned()),
             name: "postgres".to_owned(),
             user: "postgres".to_owned(),
             image: "postgres:17".to_owned(),
@@ -23,6 +25,7 @@ fn settings() -> Settings {
             access_key_id: "test-access-key".to_owned(),
             secret_access_key: "test-secret-key".to_owned(),
         },
+        schedule: ScheduleSettings::default(),
     }
 }
 

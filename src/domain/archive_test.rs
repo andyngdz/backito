@@ -70,3 +70,39 @@ fn sidecar_round_trips_through_sha256sum_layout() {
 fn sidecar_without_a_digest_parses_to_none() {
     assert_eq!(ArchiveDigest::from_sidecar("   \n"), None);
 }
+
+#[test]
+fn the_stamp_is_read_back_out_of_the_key() {
+    let archive = ArchiveName::new("app", "20260803-0942");
+
+    assert_eq!(archive.stamp(), Some("20260803-0942"));
+}
+
+#[test]
+fn a_label_containing_hyphens_still_yields_its_stamp() {
+    let archive = ArchiveName::new("crit-prod", "20260808-1830");
+
+    assert_eq!(archive.as_str(), "crit-prod-backup-20260808-1830.dump");
+    assert_eq!(archive.stamp(), Some("20260808-1830"));
+}
+
+#[test]
+fn a_key_this_tool_did_not_write_yields_no_stamp() {
+    for foreign in [
+        "someone-elses-object.dump",
+        "nostamp",
+        "app-backup-20260803-0942.sha256",
+    ] {
+        let adopted = ArchiveName::from_key(foreign);
+
+        assert_eq!(adopted.stamp(), None, "reading {foreign}");
+    }
+}
+
+#[test]
+fn a_label_ending_in_the_stem_takes_the_rightmost_marker() {
+    let archive = ArchiveName::new("nightly-backup", "20260803-0942");
+
+    assert_eq!(archive.as_str(), "nightly-backup-backup-20260803-0942.dump");
+    assert_eq!(archive.stamp(), Some("20260803-0942"));
+}

@@ -6,6 +6,7 @@ use super::super::dto::CommandReport;
 use super::super::{CliError, ExitStatus};
 use crate::domain::ArchiveName;
 use crate::features::backup::target_for;
+use crate::features::container::resolve;
 use crate::features::progress::ProgressObserver;
 use crate::features::verify::{VerifyError, run_verify, summarise};
 use crate::infra::config::Settings;
@@ -25,10 +26,12 @@ pub async fn run(
         .tempdir()
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
+    let container = resolve(&settings.database.container).await?;
+
     let outcome = run_verify(
         settings,
         &store,
-        &target_for(&settings.database),
+        &target_for(&settings.database, container),
         workspace.path(),
         archive.map(ArchiveName::from_key),
         observer,

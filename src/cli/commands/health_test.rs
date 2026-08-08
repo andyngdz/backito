@@ -1,8 +1,9 @@
 use super::run;
 use crate::features::progress::{ProgressObserver, SilentObserver};
-use crate::infra::config::ContainerSource;
-use crate::infra::config::ScheduleSettings;
-use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
+use crate::infra::config::{
+    ContainerSource, DatabaseSettings, ScheduleSettings, Settings, StorageCredentials,
+    StorageSettings,
+};
 use std::sync::Arc;
 
 fn unreachable_settings() -> Settings {
@@ -29,14 +30,15 @@ fn unreachable_settings() -> Settings {
 }
 
 #[tokio::test]
-async fn an_unreachable_bucket_fails_rather_than_reporting_a_pass() {
+async fn an_unreachable_bucket_fails_rather_than_reporting_healthy() {
     let observer: Arc<dyn ProgressObserver> = Arc::new(SilentObserver);
 
-    let failure = run(&unreachable_settings(), None, observer)
+    let failure = run(&unreachable_settings(), observer)
         .await
-        .expect_err("an unreachable bucket must fail the verification");
+        .expect_err("a bucket that cannot be read proves nothing about backups");
 
-    // A verification that cannot fetch the archive has not verified anything;
-    // it must never come back as a pass.
+    // The dangerous answer here is a green healthcheck: a probe that cannot see
+    // the bucket has not established that a backup exists, and saying "healthy"
+    // would hide exactly the outage it is there to catch.
     assert!(!failure.to_string().is_empty());
 }

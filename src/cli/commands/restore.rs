@@ -6,6 +6,7 @@ use super::super::CliError;
 use super::super::dto::CommandReport;
 use crate::domain::ArchiveName;
 use crate::features::backup::target_for;
+use crate::features::container::resolve;
 use crate::features::progress::ProgressObserver;
 use crate::features::restore::{RestoreAuthorisation, RestoreError, RestoreRequest, run_restore};
 use crate::infra::config::Settings;
@@ -22,10 +23,13 @@ pub async fn run(
     let store = ObjectStore::new(&settings.storage, &settings.credentials)
         .map_err(RestoreError::Storage)?;
 
-    let mut target = target_for(&settings.database);
-    if let Some(container) = into_container {
-        target.container = container;
-    }
+    // --into-container names the destination outright, so nothing has to be
+    // looked up; without it the restore goes back to the configured source.
+    let container = match into_container {
+        Some(named) => named,
+        None => resolve(&settings.database.container).await?,
+    };
+    let target = target_for(&settings.database, container);
 
     let workspace = tempfile::Builder::new()
         .prefix("backito-restore-")

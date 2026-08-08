@@ -47,7 +47,42 @@ restore_jobs = 4           # pg_restore parallelism, drop to 1 for a tight targe
 endpoint = "https://<account-id>.r2.cloudflarestorage.com"
 bucket   = "app-database-backups"
 region   = "auto"
+
+[schedule]                     # only `daemon` and `health` read this
+backup_interval = "24h"
+verify_interval = "7d"         # "0s" disables verification
+retain          = 7            # archives kept per label
 ```
+
+Intervals are written as a number and a unit: `30s`, `15m`, `24h`, `7d`. Every
+`[schedule]` value has a default, so a project that only runs one-shot commands
+can leave the table out.
+
+### Naming the container, or naming the service
+
+`container` pins one container by name. That is exact, and it stays exact only
+while something guarantees the name. Under an orchestrator nothing does: compose
+derives `<project>-<service>-<n>`, and uncloud appends a fresh random suffix on
+every redeploy, so a name written into the config goes stale the next time you
+deploy.
+
+Name the service instead, and backito asks Docker which container is running it:
+
+```toml
+[database]
+service = "db"                              # instead of container
+container_label = "uncloud.service.name"    # optional, see below
+```
+
+Set exactly one of `container` and `service`; backito refuses a config with both
+or neither. `container_label` defaults to `com.docker.compose.service`, which is
+what plain compose writes, so a compose project needs nothing but the `service`
+line. Other orchestrators label differently: uncloud writes
+`uncloud.service.name`.
+
+`daemon` resolves the container on every pass rather than once at startup, so a
+redeploy partway through a schedule does not leave it talking about a container
+that no longer exists.
 
 Credentials come from the environment:
 
@@ -67,6 +102,8 @@ backito init              # write backito.toml and gitignore it
 backito backup            # dump, check, hash, upload
 backito verify            # prove the newest archive restores
 backito restore --force   # load an archive into a real database
+backito daemon            # back up on a schedule until stopped
+backito health            # is there a recent enough backup? exit code says
 ```
 
 `backup` prints the stored object key on stdout and nothing else, so it composes:
@@ -126,6 +163,46 @@ refuses a target holding data unless `--force` is passed. There is no
 interactive prompt: a prompt that can hang a cron job is worse than a flag.
 
 ## Scheduling
+
+Two ways, depending on whether something else already supervises processes.
+
+### In a container: `backito daemon`
+
+```bash
+backito daemon
+```
+
+It backs up, prunes to `retain`, verifies when `verify_interval` comes round,
+and sleeps. A failed pass is reported and retried rather than ending the loop:
+a scheduler that exits on its first failure stops backing up at the moment
+something is wrong, which is the moment backups matter. A bucket it cannot list
+at startup does end it, because that is a configuration that will never work
+rather than an outage that will pass.
+
+On start it asks the bucket when the last backup landed and waits out whatever
+is left of the interval. Restarting the container does not take another backup,
+so redeploying five times in an afternoon still leaves one archive for the day.
+
+### As a healthcheck: `backito health`
+
+```yaml
+healthcheck:
+  test: ["CMD", "backito", "health"]
+  interval: 5m
+```
+
+Exit 0 while the newest archive is younger than two `backup_interval` periods,
+exit 1 once it is older, or when there is no readable archive at all. One missed
+backup is a retry; two is a pattern.
+
+It reads the bucket rather than a local marker file, which is what makes it
+survive the container: a restarted or rebuilt process reports the same answer as
+the one it replaced, instead of looking healthy because it has forgotten. Note
+that this is not a liveness probe, and that is the point. A backup loop that is
+running fine but has stopped being able to upload looks exactly like one that
+works, and that is the failure worth catching.
+
+### On a host: cron
 
 ```bash
 PATH=/home/you/.cargo/bin:/usr/local/bin:/usr/bin:/bin
