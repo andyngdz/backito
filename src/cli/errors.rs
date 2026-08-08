@@ -7,6 +7,7 @@ use crate::features::daemon::DaemonError;
 use crate::features::init::InitError;
 use crate::features::restore::RestoreError;
 use crate::features::verify::VerifyError;
+use crate::features::walg::WalgError;
 use crate::infra::config::ConfigError;
 use crate::infra::docker::DockerError;
 use crate::infra::object_store::ObjectStoreError;
@@ -58,6 +59,10 @@ pub enum CliError {
     #[error("{0}")]
     Daemon(#[from] DaemonError),
 
+    /// A wal-g command could not do its work.
+    #[error("{0}")]
+    Walg(#[from] WalgError),
+
     /// The container running the database could not be identified.
     #[error("{0}")]
     Container(#[from] DockerError),
@@ -96,6 +101,9 @@ impl CliError {
             Self::Config(ConfigError::ParseInterval { .. }) => {
                 Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
             }
+            Self::Walg(WalgError::NotConfigured) => {
+                Some("add a [walg] section with an s3_prefix, or leave WAL archiving off")
+            }
             Self::Container(DockerError::NoContainerForService { .. }) => Some(
                 "check the service is up, and that container_label matches the orchestrator: \
                  com.docker.compose.service for compose, uncloud.service.name for uncloud",
@@ -107,6 +115,7 @@ impl CliError {
             | Self::Init(_)
             | Self::Container(_)
             | Self::Daemon(_)
+            | Self::Walg(_)
             | Self::WorkingDirectory { .. } => None,
         }
     }

@@ -6,6 +6,7 @@ mod prune;
 mod run_daemon;
 mod run_loop;
 
+pub use due::{ArchiveAge, BackupDue, due_from_age};
 pub use freshness::{BackupFreshness, backup_freshness};
 pub use run_daemon::newest_archive;
 pub use run_loop::run_loop;

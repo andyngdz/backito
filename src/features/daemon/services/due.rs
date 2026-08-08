@@ -45,7 +45,16 @@ pub enum BackupDue {
 /// when the last backup happened resolves towards taking one: a spare archive
 /// costs storage, a missing one costs the database.
 pub fn backup_due(newest: &NewestArchive, interval: Interval, now: Timestamp) -> BackupDue {
-    let ArchiveAge::Known(age) = archive_age(newest, now) else {
+    due_from_age(archive_age(newest, now), interval)
+}
+
+/// The same decision, from an age measured some other way.
+///
+/// Physical backups are listed by `wal-g` rather than by key, so their age comes
+/// from a different place. The rule about what to do with it is the same one,
+/// and is worth having in a single place with a single set of tests.
+pub fn due_from_age(age: ArchiveAge, interval: Interval) -> BackupDue {
+    let ArchiveAge::Known(age) = age else {
         return BackupDue::Now;
     };
 

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use super::ConfigError;
 use super::database::{DatabaseFile, DatabaseSettings};
 use super::schedule::{ScheduleFile, ScheduleSettings};
+use super::walg::{WalgFile, WalgMode};
 
 /// Default config filename looked up in the working directory.
 pub const CONFIG_FILENAME: &str = "backito.toml";
@@ -32,6 +33,9 @@ pub struct Settings {
     /// Cadence for the long-running commands. Defaulted in full, so a config
     /// written for one-shot `backup` needs no `[schedule]` table at all.
     pub schedule: ScheduleSettings,
+    /// Physical backups through `wal-g`, or a named absence when the config
+    /// carries no `[walg]` table.
+    pub walg: WalgMode,
 }
 
 /// The storage half of `backito.toml`.
@@ -62,10 +66,11 @@ struct SettingsFile {
     storage: StorageSettings,
     #[serde(default)]
     schedule: ScheduleFile,
+    walg: Option<WalgFile>,
 }
 
 fn default_region() -> String {
-    "auto".to_owned()
+    super::DEFAULT_REGION.to_owned()
 }
 
 impl Settings {
@@ -84,11 +89,17 @@ impl Settings {
                 source,
             })?;
 
+        let storage_endpoint = parsed.storage.endpoint.clone();
+
         Ok(Self {
             database: parsed.database.into_settings()?,
             storage: parsed.storage,
             credentials: StorageCredentials::from_env()?,
             schedule: parsed.schedule.into_settings()?,
+            walg: match parsed.walg {
+                Some(file) => WalgMode::Enabled(Box::new(file.into_settings(&storage_endpoint)?)),
+                None => WalgMode::Disabled,
+            },
         })
     }
 }

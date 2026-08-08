@@ -110,4 +110,58 @@ pub enum Command {
     /// Examples:
     ///   backito health
     Health,
+
+    /// Physical backups, driven through the `wal-g` binary.
+    ///
+    /// Reads the [walg] section. Without one, `archive` exits 0 so a container
+    /// with no WAL storage recycles its segments normally, while `base` says
+    /// there is nothing configured.
+    #[command(subcommand)]
+    Walg(WalgCommand),
+}
+
+/// The `walg` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum WalgCommand {
+    /// Push one WAL segment. Postgres runs this as archive_command.
+    ///
+    /// Examples:
+    ///   backito walg archive /var/lib/postgresql/data/pg_wal/000000010000000000000001
+    Archive {
+        /// Path to the completed segment, which Postgres passes as %p.
+        #[arg(value_name = "SEGMENT")]
+        segment: String,
+    },
+
+    /// Take base backups on a cadence until stopped.
+    ///
+    /// WAL segments restore nothing on their own: they have to be replayed onto
+    /// a base backup from the same cluster. On start this asks wal-g when the
+    /// last one landed, so a restarted container does not take another.
+    ///
+    /// Examples:
+    ///   backito walg base
+    Base,
+
+    /// Write Postgres archiving settings, then exec the image's entrypoint.
+    ///
+    /// Meant as a container ENTRYPOINT. It replaces itself with the program
+    /// that follows, so Postgres keeps PID 1 and signals reach it unchanged.
+    ///
+    /// Examples:
+    ///   backito walg entrypoint --fragment /etc/postgresql-custom/wal-g.conf -- docker-entrypoint.sh postgres
+    Entrypoint {
+        /// File to write the archiving settings into. The image decides where
+        /// its Postgres reads extra configuration from.
+        #[arg(long, value_name = "FILE")]
+        fragment: PathBuf,
+
+        /// The program to hand over to.
+        #[arg(value_name = "PROGRAM")]
+        program: String,
+
+        /// Arguments for that program.
+        #[arg(trailing_var_arg = true, value_name = "ARGS")]
+        args: Vec<String>,
+    },
 }

@@ -8,4 +8,7 @@ mod errors;
 mod services;
 
 pub use errors::DaemonError;
-pub use services::{BackupFreshness, backup_freshness, newest_archive, run_loop};
+pub use services::{
+    ArchiveAge, BackupDue, BackupFreshness, backup_freshness, due_from_age, newest_archive,
+    run_loop,
+};
