@@ -1,3 +1,4 @@
+use super::ContainerSource;
 use super::{ConfigError, Settings};
 use indoc::indoc;
 use std::io::Write;
@@ -77,7 +78,10 @@ fn full_config_loads_every_field() {
 
     clear_credentials();
     assert_eq!(settings.database.label, "app");
-    assert_eq!(settings.database.container, "app-db");
+    assert_eq!(
+        settings.database.container,
+        ContainerSource::Named("app-db".to_owned())
+    );
     assert_eq!(settings.database.restore_jobs, 1);
     assert_eq!(settings.storage.bucket, "app-database-backups");
     assert_eq!(settings.credentials.access_key_id, "test-access-key");
@@ -128,4 +132,113 @@ fn a_missing_file_names_the_path_it_tried() {
 
     clear_credentials();
     assert!(matches!(failure, ConfigError::ReadFile { .. }));
+}
+
+#[test]
+fn a_service_resolves_against_the_compose_label_by_default() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        service = "db"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+        "#});
+    set_credentials("test-access-key");
+
+    let settings = Settings::load(Some(config.path())).expect("load");
+
+    clear_credentials();
+    assert_eq!(
+        settings.database.container,
+        ContainerSource::Service {
+            label: "com.docker.compose.service".to_owned(),
+            service: "db".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn container_label_overrides_the_default_for_other_orchestrators() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        service = "db"
+        container_label = "uncloud.service.name"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+        "#});
+    set_credentials("test-access-key");
+
+    let settings = Settings::load(Some(config.path())).expect("load");
+
+    clear_credentials();
+    assert_eq!(
+        settings.database.container,
+        ContainerSource::Service {
+            label: "uncloud.service.name".to_owned(),
+            service: "db".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn naming_both_a_container_and_a_service_is_refused() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        container = "app-db"
+        service = "db"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+        "#});
+    set_credentials("test-access-key");
+
+    let failure = Settings::load(Some(config.path())).expect_err("both cannot hold");
+
+    clear_credentials();
+    assert!(matches!(failure, ConfigError::ContainerOverSpecified));
+}
+
+#[test]
+fn naming_neither_a_container_nor_a_service_is_refused() {
+    let _turn = ENV_TURN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let config = write_config(indoc! {r#"
+        [database]
+        label = "app"
+        name = "postgres"
+        image = "postgres:17"
+
+        [storage]
+        endpoint = "https://account.r2.cloudflarestorage.com"
+        bucket = "app-database-backups"
+        "#});
+    set_credentials("test-access-key");
+
+    let failure = Settings::load(Some(config.path())).expect_err("one of the two is required");
+
+    clear_credentials();
+    assert!(matches!(failure, ConfigError::ContainerUnspecified));
 }

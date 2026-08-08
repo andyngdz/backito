@@ -30,4 +30,14 @@ pub enum ConfigError {
         /// Name of the missing variable.
         variable: String,
     },
+
+    /// `[database]` names both a container and a service.
+    #[error(
+        "[database] sets both container and service: keep container to pin one by name, or service to resolve it by label"
+    )]
+    ContainerOverSpecified,
+
+    /// `[database]` names neither a container nor a service.
+    #[error("[database] needs either container or service to say which container runs Postgres")]
+    ContainerUnspecified,
 }

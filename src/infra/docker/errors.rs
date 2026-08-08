@@ -31,4 +31,13 @@ pub enum DockerError {
         /// Container that was expected to be up.
         container: String,
     },
+
+    /// No running container carries the label the config named.
+    #[error("no running container labelled {label}={service}")]
+    NoContainerForService {
+        /// Label key that was filtered on, e.g. `com.docker.compose.service`.
+        label: String,
+        /// Value that was expected, i.e. the service name.
+        service: String,
+    },
 }

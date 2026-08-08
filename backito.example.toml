@@ -15,6 +15,22 @@ label = "app"
 # binary always matches the server version and the host needs no Postgres.
 container = "app-db"
 
+# Instead of `container`, name the service and let backito look the container up
+# each time it needs one. Set exactly one of the two.
+#
+# Worth doing wherever nothing guarantees the container name: compose derives
+# <project>-<service>-<n>, and orchestrators such as uncloud append a fresh
+# random suffix on every redeploy, so a name written here goes stale the next
+# time something is deployed.
+#
+#   service = "db"
+#
+# Which container label carries the service name. Defaults to compose's, so
+# a plain `docker compose` project needs nothing here; uncloud writes
+# uncloud.service.name and has to say so.
+#
+#   container_label = "com.docker.compose.service"
+
 # Database to dump.
 name = "postgres"
 

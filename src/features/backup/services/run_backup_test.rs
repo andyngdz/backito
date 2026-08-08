@@ -1,11 +1,12 @@
 use super::target_for;
+use crate::infra::config::ContainerSource;
 use crate::infra::config::{DatabaseSettings, Settings, StorageCredentials, StorageSettings};
 
 fn settings() -> Settings {
     Settings {
         database: DatabaseSettings {
             label: "app".to_owned(),
-            container: "app-db".to_owned(),
+            container: ContainerSource::Named("app-db".to_owned()),
             name: "postgres".to_owned(),
             user: "readonly".to_owned(),
             image: "postgres:17".to_owned(),
@@ -25,7 +26,7 @@ fn settings() -> Settings {
 
 #[test]
 fn the_target_comes_from_configuration_not_defaults() {
-    let target = target_for(&settings().database);
+    let target = target_for(&settings().database, "app-db".to_owned());
 
     assert_eq!(target.container, "app-db");
     assert_eq!(target.database, "postgres");

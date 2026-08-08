@@ -1,5 +1,6 @@
 use super::{CONFIG_FILENAME, Overwrite, template, write_config};
 use crate::features::init::InitError;
+use crate::infra::config::ContainerSource;
 use crate::infra::config::Settings;
 use tempfile::TempDir;
 
@@ -35,7 +36,10 @@ fn the_written_template_parses_as_a_config() {
     }
 
     let settings = loaded.expect("the shipped template must parse");
-    assert!(!settings.database.container.is_empty());
+    assert!(matches!(
+        settings.database.container,
+        ContainerSource::Named(ref name) if !name.is_empty()
+    ));
     assert!(!settings.storage.bucket.is_empty());
 }
 

@@ -20,6 +20,8 @@ pub enum DockerSubcommand {
     Rm,
     /// Execute a program inside a running container.
     Exec,
+    /// List running containers.
+    Ps,
 }
 
 impl DockerSubcommand {
@@ -30,6 +32,7 @@ impl DockerSubcommand {
             Self::Run => "run",
             Self::Rm => "rm",
             Self::Exec => "exec",
+            Self::Ps => "ps",
         }
     }
 }
@@ -91,6 +94,37 @@ pub async fn is_running(container: &str) -> Result<bool, DockerError> {
         Err(DockerError::Exit { .. }) => Ok(false),
         Err(other) => Err(other),
     }
+}
+
+/// Names the running container carrying `label`=`service`.
+///
+/// Orchestrators that mint container names do not let you fix one: compose
+/// derives `<project>-<service>-<n>`, and uncloud appends a fresh random suffix
+/// on every redeploy. The service name is the part that stays put, and both
+/// record it as a label, so that is what a long-running caller should resolve
+/// against rather than a name captured once at startup.
+///
+/// Ties are broken by taking the first line. A service scaled past one replica
+/// has several, and for a database any of them is the wrong thing to guess at,
+/// so callers that care should pin `container` instead.
+pub async fn resolve_by_label(label: &str, service: &str) -> Result<String, DockerError> {
+    let subcommand = DockerSubcommand::Ps.as_arg();
+    let filter = format!("label={label}={service}");
+    let listed = run_docker(
+        subcommand,
+        &[subcommand, "--filter", &filter, "--format", "{{.Names}}"],
+    )
+    .await?;
+
+    String::from_utf8_lossy(&listed)
+        .lines()
+        .map(str::trim)
+        .find(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| DockerError::NoContainerForService {
+            label: label.to_owned(),
+            service: service.to_owned(),
+        })
 }
 
 /// Fails unless `container` is running, so a command stops before it does work
