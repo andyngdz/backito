@@ -15,13 +15,16 @@ const ENABLED: &str = "true";
 /// Returned rather than applied to this process: setting a variable here would
 /// leak into every later command, and `std::env::set_var` is unsafe in a
 /// threaded program for exactly that reason.
-pub fn walg_environment(settings: &WalgSettings) -> Vec<(&'static str, String)> {
+pub fn walg_environment(
+    settings: &WalgSettings,
+    credentials: &WalgCredentials,
+) -> Vec<(&'static str, String)> {
     vec![
         ("WALG_S3_PREFIX", settings.s3_prefix.clone()),
         ("AWS_ENDPOINT", settings.endpoint.clone()),
         ("AWS_REGION", settings.region.clone()),
-        credential_pair_id(&settings.credentials),
-        credential_pair_secret(&settings.credentials),
+        credential_pair_id(credentials),
+        credential_pair_secret(credentials),
         // R2 and most S3-compatible services address buckets by path rather
         // than by subdomain. Without this wal-g builds virtual-host URLs that
         // resolve nowhere.

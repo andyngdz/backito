@@ -1,7 +1,6 @@
 use super::{CONFIG_FILENAME, Overwrite, template, write_config};
 use crate::features::init::InitError;
-use crate::infra::config::ContainerSource;
-use crate::infra::config::Settings;
+use crate::infra::config::{ConfigSource, ContainerSource, TomlSource};
 use tempfile::TempDir;
 
 #[test]
@@ -24,23 +23,17 @@ fn the_written_template_parses_as_a_config() {
     let directory = TempDir::new().expect("temp dir");
     let path = write_config(directory.path(), Overwrite::Refuse).expect("write");
 
-    // SAFETY: this test sets both credential variables around one load call.
-    unsafe {
-        std::env::set_var("BACKITO_ACCESS_KEY_ID", "test-access-key");
-        std::env::set_var("BACKITO_SECRET_ACCESS_KEY", "test-secret-key");
-    }
-    let loaded = Settings::load(Some(&path));
-    unsafe {
-        std::env::remove_var("BACKITO_ACCESS_KEY_ID");
-        std::env::remove_var("BACKITO_SECRET_ACCESS_KEY");
-    }
+    // Only the config half is checked here: the template carries no credentials
+    // by design, so reading it needs no secret source.
+    let core = TomlSource::new(Some(&path))
+        .load()
+        .expect("the shipped template must parse");
 
-    let settings = loaded.expect("the shipped template must parse");
     assert!(matches!(
-        settings.database.container,
+        core.database.container,
         ContainerSource::Named(ref name) if !name.is_empty()
     ));
-    assert!(!settings.storage.bucket.is_empty());
+    assert!(!core.storage.bucket.is_empty());
 }
 
 #[test]

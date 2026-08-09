@@ -6,7 +6,7 @@ use super::super::CliError;
 use super::super::dto::CommandReport;
 use crate::features::progress::ProgressObserver;
 use crate::features::walg::{WalgError, run_base_loop};
-use crate::infra::config::{Settings, WalgMode};
+use crate::infra::config::Settings;
 
 /// Runs the base backup loop.
 ///
@@ -19,7 +19,7 @@ pub async fn run(
     settings: &Settings,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<CommandReport, CliError> {
-    let WalgMode::Enabled(walg) = &settings.walg else {
+    let Some((walg, credentials)) = settings.walg_runtime() else {
         return Err(CliError::Walg(WalgError::NotConfigured));
     };
 
@@ -28,7 +28,7 @@ pub async fn run(
         walg.base_interval, walg.retain_full,
     ));
 
-    run_base_loop(walg, observer).await?;
+    run_base_loop(walg, credentials, observer).await?;
 
     Ok(CommandReport::line("base backup loop stopped"))
 }

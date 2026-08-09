@@ -15,12 +15,12 @@ use crate::infra::config::{Settings, WalgMode};
 pub fn run(
     settings: &Settings,
     fragment_path: &Path,
-    config_path: &Path,
+    source_flags: &str,
     program: &str,
     args: &[String],
 ) -> Result<CommandReport, CliError> {
     let fragment = match &settings.walg {
-        WalgMode::Enabled(_) => archiving_fragment(config_path),
+        WalgMode::Enabled(_) => archiving_fragment(source_flags),
         WalgMode::Disabled => disabled_fragment(),
     };
 

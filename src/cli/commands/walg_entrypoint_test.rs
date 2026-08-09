@@ -4,9 +4,16 @@ use crate::infra::config::{
     ContainerSource, DatabaseSettings, ScheduleSettings, Settings, StorageCredentials,
     StorageSettings, WalgCredentials, WalgMode, WalgSettings,
 };
-use std::path::Path;
 
 fn settings(walg: WalgMode) -> Settings {
+    let walg_credentials = match &walg {
+        WalgMode::Enabled(_) => Some(WalgCredentials {
+            access_key_id: "walg-key".to_owned(),
+            secret_access_key: "walg-secret".to_owned(),
+        }),
+        WalgMode::Disabled => None,
+    };
+
     Settings {
         database: DatabaseSettings {
             label: "app".to_owned(),
@@ -27,6 +34,7 @@ fn settings(walg: WalgMode) -> Settings {
         },
         schedule: ScheduleSettings::default(),
         walg,
+        walg_credentials,
     }
 }
 
@@ -39,10 +47,6 @@ fn enabled() -> WalgMode {
         base_interval: Interval::from_secs(24 * 60 * 60),
         retain_full: 3,
         binary: "wal-g".to_owned(),
-        credentials: WalgCredentials {
-            access_key_id: "walg-key".to_owned(),
-            secret_access_key: "walg-secret".to_owned(),
-        },
     }))
 }
 
@@ -55,7 +59,7 @@ fn a_configured_cluster_gets_archiving_turned_on() {
     let _ = run(
         &settings(enabled()),
         fragment.path(),
-        Path::new("/etc/backito/backito.toml"),
+        "--config /etc/backito/backito.toml",
         "backito-no-such-entrypoint",
         &["postgres".to_owned()],
     );
@@ -72,13 +76,29 @@ fn a_configured_cluster_gets_archiving_turned_on() {
 }
 
 #[test]
+fn an_environment_run_repeats_the_env_flag_rather_than_a_path() {
+    let fragment = tempfile::NamedTempFile::new().expect("temp fragment");
+
+    let _ = run(
+        &settings(enabled()),
+        fragment.path(),
+        "--env",
+        "backito-no-such-entrypoint",
+        &["postgres".to_owned()],
+    );
+
+    let written = std::fs::read_to_string(fragment.path()).expect("read fragment");
+    assert!(written.contains("--env walg archive %p"), "got: {written}");
+}
+
+#[test]
 fn a_cluster_without_wal_storage_is_left_archiving_nothing() {
     let fragment = tempfile::NamedTempFile::new().expect("temp fragment");
 
     let _ = run(
         &settings(WalgMode::Disabled),
         fragment.path(),
-        Path::new("backito.toml"),
+        "--config backito.toml",
         "backito-no-such-entrypoint",
         &["postgres".to_owned()],
     );

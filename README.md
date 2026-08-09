@@ -31,9 +31,9 @@ left to fill in. Re-running refuses to clobber your file unless you pass
 `--force`.
 
 The config is gitignored on purpose: an R2 endpoint carries your account id, so
-it is per-machine setup rather than shared source. To commit the config instead,
-leave `endpoint` out and set `BACKITO_ENDPOINT` in the environment alongside the
-credentials, keeping the account id out of the file. Open it and fill in
+it is per-machine setup rather than shared source. To keep the account id out of
+a file entirely, read the settings from the environment instead, described under
+[Where settings come from](#where-settings-come-from). Open the file and fill in
 `endpoint` and `bucket`:
 
 ```toml
@@ -46,7 +46,7 @@ image     = "postgres:17"  # image `verify` restores into
 restore_jobs = 4           # pg_restore parallelism, drop to 1 for a tight target
 
 [storage]
-endpoint = "https://<account-id>.r2.cloudflarestorage.com"  # or set BACKITO_ENDPOINT
+endpoint = "https://<account-id>.r2.cloudflarestorage.com"
 bucket   = "app-database-backups"
 region   = "auto"
 
@@ -91,12 +91,59 @@ Credentials come from the environment:
 ```bash
 export BACKITO_ACCESS_KEY_ID='...'
 export BACKITO_SECRET_ACCESS_KEY='...'
-export BACKITO_ENDPOINT='...'          # optional, when the config omits endpoint
 ```
 
 Give the bucket its own credential. A token scoped to one bucket cannot damage
-anything else if it leaks — and `backito` never probes or creates a bucket, so a
+anything else if it leaks, and `backito` never probes or creates a bucket, so a
 scoped token is enough.
+
+## Where settings come from
+
+A configuration has two halves, and they are read separately.
+
+**The credentials** always come from the environment. No config file carries a
+token, so a file that leaks costs you nothing.
+
+**Everything else** comes from exactly one source: a TOML file, or `BACKITO_*`
+variables. The two never fill each other's gaps. Pick one and it owns every
+field, so a missing value is that source's error rather than a silent fall
+through to something you did not mean.
+
+```bash
+backito backup                        # backito.toml in the working directory
+backito --config /etc/backito.toml backup
+backito --env backup                  # every setting from the environment
+```
+
+`--env` suits a container: nothing is baked into the image, and the endpoint
+stays out of source control without a file to mount.
+
+| Variable | TOML field | Required |
+|---|---|---|
+| `BACKITO_DB_LABEL` | `database.label` | yes |
+| `BACKITO_DB_CONTAINER` / `BACKITO_DB_SERVICE` | `database.container` / `.service` | one of the two |
+| `BACKITO_DB_CONTAINER_LABEL` | `database.container_label` | no |
+| `BACKITO_DB_NAME` | `database.name` | yes |
+| `BACKITO_DB_USER` | `database.user` | no |
+| `BACKITO_DB_IMAGE` | `database.image` | yes |
+| `BACKITO_DB_RESTORE_JOBS` | `database.restore_jobs` | no |
+| `BACKITO_ENDPOINT` | `storage.endpoint` | yes |
+| `BACKITO_BUCKET` | `storage.bucket` | yes |
+| `BACKITO_REGION` | `storage.region` | no |
+| `BACKITO_BACKUP_INTERVAL` | `schedule.backup_interval` | no |
+| `BACKITO_VERIFY_INTERVAL` | `schedule.verify_interval` | no |
+| `BACKITO_RETAIN` | `schedule.retain` | no |
+| `BACKITO_WALG_S3_PREFIX` | `walg.s3_prefix` | turns WAL archiving on |
+| `BACKITO_WALG_ENDPOINT` / `_REGION` / `_DATA_DIR` | the matching `[walg]` field | no |
+| `BACKITO_WALG_BASE_INTERVAL` / `_RETAIN_FULL` / `_BINARY` | the matching `[walg]` field | no |
+
+Under `--env`, the `[walg]` table has no presence of its own: setting
+`BACKITO_WALG_S3_PREFIX` is what turns WAL archiving on, the same way writing the
+section does in a file.
+
+Adding a third source, a secret manager or a remote config service, is one
+implementation of `ConfigSource` or `SecretSource` rather than a change to
+anything that reads settings.
 
 ## Use
 
@@ -221,9 +268,10 @@ ENTRYPOINT ["backito", "walg", "entrypoint", \
 ```
 
 It execs rather than supervises, so Postgres keeps PID 1 and signals reach it
-unchanged. The `archive_command` it writes names this executable and this config
-by absolute path, because Postgres runs that command from its own working
-directory with a minimal environment.
+unchanged. The `archive_command` it writes names this executable by absolute
+path, and repeats whichever source flag this run used (`--config <path>` or
+`--env`), because Postgres runs that command from its own working directory with
+a minimal environment.
 
 ## Safety
 

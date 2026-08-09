@@ -64,14 +64,14 @@ fn parse_interval(field: &str, text: &str) -> Result<Interval, ConfigError> {
 }
 
 /// One backup a day, the cadence a logical dump is sized for.
-const DEFAULT_BACKUP_INTERVAL: Interval = Interval::from_secs(24 * 60 * 60);
+pub const DEFAULT_BACKUP_INTERVAL: Interval = Interval::from_secs(24 * 60 * 60);
 
 /// One verification a week. A restore-and-compare costs a full download and a
 /// full restore, so it runs far less often than the backup it checks.
-const DEFAULT_VERIFY_INTERVAL: Interval = Interval::from_secs(7 * 24 * 60 * 60);
+pub const DEFAULT_VERIFY_INTERVAL: Interval = Interval::from_secs(7 * 24 * 60 * 60);
 
 /// A week of daily archives.
-const DEFAULT_RETAIN: u32 = 7;
+pub const DEFAULT_RETAIN: u32 = 7;
 
 impl Default for ScheduleSettings {
     fn default() -> Self {

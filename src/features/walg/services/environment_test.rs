@@ -11,15 +11,18 @@ fn settings() -> WalgSettings {
         base_interval: Interval::from_secs(24 * 60 * 60),
         retain_full: 3,
         binary: "wal-g".to_owned(),
-        credentials: WalgCredentials {
-            access_key_id: "walg-key".to_owned(),
-            secret_access_key: "walg-secret".to_owned(),
-        },
+    }
+}
+
+fn credentials() -> WalgCredentials {
+    WalgCredentials {
+        access_key_id: "walg-key".to_owned(),
+        secret_access_key: "walg-secret".to_owned(),
     }
 }
 
 fn value_of(name: &str) -> String {
-    walg_environment(&settings())
+    walg_environment(&settings(), &credentials())
         .into_iter()
         .find(|(key, _)| *key == name)
         .map(|(_, value)| value)
@@ -54,7 +57,7 @@ fn path_style_addressing_is_forced() {
 fn nothing_is_written_into_this_process_environment() {
     // SAFETY: reading only, and the point of the test is that the call above
     // did not set anything.
-    walg_environment(&settings());
+    walg_environment(&settings(), &credentials());
 
     assert!(
         std::env::var("WALG_S3_PREFIX").is_err(),

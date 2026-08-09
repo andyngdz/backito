@@ -27,6 +27,7 @@ fn settings_without_walg() -> Settings {
         },
         schedule: ScheduleSettings::default(),
         walg: WalgMode::Disabled,
+        walg_credentials: None,
     }
 }
 

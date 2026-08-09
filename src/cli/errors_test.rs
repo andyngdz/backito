@@ -63,14 +63,16 @@ fn an_existing_config_is_not_reported_as_a_reason_to_run_init_again() {
 }
 
 #[test]
-fn a_missing_credential_names_both_variables() {
-    let failure = CliError::Config(ConfigError::MissingCredential {
+fn a_missing_variable_offers_both_ways_to_supply_it() {
+    // The message already names the variable, so the hint carries the other
+    // half: a file is the alternative to exporting it.
+    let failure = CliError::Config(ConfigError::MissingEnvVar {
         variable: "BACKITO_ACCESS_KEY_ID".to_owned(),
     });
 
     let hint = failure.hint().expect("this failure must carry a hint");
-    assert!(hint.contains("BACKITO_ACCESS_KEY_ID"));
-    assert!(hint.contains("BACKITO_SECRET_ACCESS_KEY"));
+    assert!(hint.contains("set the named variable"));
+    assert!(hint.contains("--config"));
 }
 
 #[test]

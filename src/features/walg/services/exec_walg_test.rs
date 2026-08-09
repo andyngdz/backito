@@ -11,10 +11,13 @@ fn settings_with_binary(binary: &str) -> WalgSettings {
         base_interval: Interval::from_secs(24 * 60 * 60),
         retain_full: 3,
         binary: binary.to_owned(),
-        credentials: WalgCredentials {
-            access_key_id: "walg-key".to_owned(),
-            secret_access_key: "walg-secret".to_owned(),
-        },
+    }
+}
+
+fn credentials() -> WalgCredentials {
+    WalgCredentials {
+        access_key_id: "walg-key".to_owned(),
+        secret_access_key: "walg-secret".to_owned(),
     }
 }
 
@@ -24,6 +27,7 @@ fn a_missing_wal_g_binary_names_what_could_not_be_started() {
     // test: a successful exec would have replaced this process.
     let failure = exec_walg(
         &settings_with_binary("backito-no-such-wal-g-binary"),
+        &credentials(),
         &["backup-list"],
     );
 

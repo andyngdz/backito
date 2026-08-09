@@ -1,323 +1,124 @@
-use super::{ConfigError, Settings};
-use crate::infra::config::{ContainerSource, ScheduleSettings};
-use indoc::indoc;
-use std::io::Write;
-use tempfile::NamedTempFile;
+use super::Settings;
+use crate::domain::Interval;
+use crate::infra::config::{
+    ConfigCore, ConfigError, ConfigSource, ContainerSource, DatabaseSettings, ScheduleSettings,
+    SecretSource, Secrets, StorageCredentials, StorageSettings, WalgCredentials, WalgMode,
+    WalgSettings,
+};
 
-use crate::infra::config::ENV_TURN;
+/// A config source that hands back what it was built with, so the assembly can
+/// be tested without a file on disk or a variable in the environment.
+struct FixedConfig(ConfigCore);
 
-const ACCESS_KEY_VAR: &str = "BACKITO_ACCESS_KEY_ID";
-const SECRET_KEY_VAR: &str = "BACKITO_SECRET_ACCESS_KEY";
-
-fn full_config() -> &'static str {
-    indoc! {r#"
-        [database]
-        label = "app"
-        container = "app-db"
-        name = "postgres"
-        user = "postgres"
-        image = "postgres:17"
-        restore_jobs = 1
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        region = "auto"
-        "#}
-}
-
-fn minimal_config() -> &'static str {
-    indoc! {r#"
-        [database]
-        label = "app"
-        container = "app-db"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        "#}
-}
-
-fn write_config(body: &str) -> NamedTempFile {
-    let mut file = NamedTempFile::new().expect("create temp config");
-    file.write_all(body.as_bytes()).expect("write temp config");
-    file.flush().expect("flush temp config");
-    file
-}
-
-fn set_credentials(access_key: &str) {
-    // SAFETY: the config tests run in one process and set both variables around
-    // a single load call.
-    unsafe {
-        std::env::set_var(ACCESS_KEY_VAR, access_key);
-        std::env::set_var(SECRET_KEY_VAR, "test-secret-key");
+impl ConfigSource for FixedConfig {
+    fn load(&self) -> Result<ConfigCore, ConfigError> {
+        Ok(self.0.clone())
     }
 }
 
-fn clear_credentials() {
-    // SAFETY: mirrors `set_credentials`, immediately after the load call.
-    unsafe {
-        std::env::remove_var(ACCESS_KEY_VAR);
-        std::env::remove_var(SECRET_KEY_VAR);
+/// The secret half of the same fixture.
+struct FixedSecrets(Secrets);
+
+impl SecretSource for FixedSecrets {
+    fn load(&self) -> Result<Secrets, ConfigError> {
+        Ok(self.0.clone())
+    }
+}
+
+fn core(walg: WalgMode) -> ConfigCore {
+    ConfigCore {
+        database: DatabaseSettings {
+            label: "app".to_owned(),
+            container: ContainerSource::Named("app-db".to_owned()),
+            name: "postgres".to_owned(),
+            user: "postgres".to_owned(),
+            image: "postgres:17".to_owned(),
+            restore_jobs: 4,
+        },
+        storage: StorageSettings {
+            endpoint: "https://account.r2.cloudflarestorage.com".to_owned(),
+            bucket: "app-database-backups".to_owned(),
+            region: "auto".to_owned(),
+        },
+        schedule: ScheduleSettings::default(),
+        walg,
+    }
+}
+
+fn walg_enabled() -> WalgMode {
+    WalgMode::Enabled(Box::new(WalgSettings {
+        s3_prefix: "s3://app-walg/".to_owned(),
+        endpoint: "https://account.r2.cloudflarestorage.com".to_owned(),
+        region: "auto".to_owned(),
+        data_dir: "/var/lib/postgresql/data".to_owned(),
+        base_interval: Interval::from_secs(24 * 60 * 60),
+        retain_full: 3,
+        binary: "wal-g".to_owned(),
+    }))
+}
+
+fn secrets(walg: Option<WalgCredentials>) -> Secrets {
+    Secrets {
+        storage: StorageCredentials {
+            access_key_id: "test-access-key".to_owned(),
+            secret_access_key: "test-secret-key".to_owned(),
+        },
+        walg,
+    }
+}
+
+fn walg_credentials() -> WalgCredentials {
+    WalgCredentials {
+        access_key_id: "walg-access-key".to_owned(),
+        secret_access_key: "walg-secret-key".to_owned(),
     }
 }
 
 #[test]
-fn full_config_loads_every_field() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(full_config());
-    set_credentials("test-access-key");
+fn load_takes_one_source_of_each_kind_and_neither_fills_the_other() {
+    let settings = Settings::load(
+        &FixedConfig(core(WalgMode::Disabled)),
+        &FixedSecrets(secrets(None)),
+    )
+    .expect("load");
 
-    let settings = Settings::load(Some(config.path())).expect("load");
+    assert_eq!(settings.storage.bucket, "app-database-backups");
+    assert_eq!(settings.credentials.secret_access_key, "test-secret-key");
+}
 
-    clear_credentials();
+#[test]
+fn the_two_halves_join_into_one_configuration() {
+    let settings = Settings::from_parts(core(WalgMode::Disabled), secrets(None)).expect("assemble");
+
     assert_eq!(settings.database.label, "app");
-    assert_eq!(
-        settings.database.container,
-        ContainerSource::Named("app-db".to_owned())
-    );
-    assert_eq!(settings.database.restore_jobs, 1);
     assert_eq!(settings.storage.bucket, "app-database-backups");
     assert_eq!(settings.credentials.access_key_id, "test-access-key");
+    assert_eq!(settings.walg, WalgMode::Disabled);
 }
 
 #[test]
-fn user_and_region_fall_back_to_postgres_and_auto() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(minimal_config());
-    set_credentials("test-access-key");
+fn wal_archiving_hands_back_its_settings_and_token_together() {
+    let settings = Settings::from_parts(core(walg_enabled()), secrets(Some(walg_credentials())))
+        .expect("assemble");
 
-    let settings = Settings::load(Some(config.path())).expect("load");
-
-    clear_credentials();
-    assert_eq!(settings.database.user, "postgres");
-    assert_eq!(settings.database.restore_jobs, 4);
-    assert_eq!(settings.storage.region, "auto");
+    let (walg, credentials) = settings.walg_runtime().expect("wal archiving is on");
+    assert_eq!(walg.s3_prefix, "s3://app-walg/");
+    assert_eq!(credentials.access_key_id, "walg-access-key");
 }
 
 #[test]
-fn a_blank_credential_is_treated_as_missing() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(full_config());
-    set_credentials("   ");
+fn wal_archiving_without_its_token_is_refused() {
+    let failure =
+        Settings::from_parts(core(walg_enabled()), secrets(None)).expect_err("token required");
 
-    let failure = Settings::load(Some(config.path())).expect_err("blank must fail");
-
-    clear_credentials();
-    assert!(matches!(
-        failure,
-        ConfigError::MissingCredential { ref variable } if variable == ACCESS_KEY_VAR
-    ));
+    assert!(matches!(failure, ConfigError::MissingWalgCredentials));
 }
 
 #[test]
-fn a_missing_file_names_the_path_it_tried() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    set_credentials("test-access-key");
+fn a_wal_token_without_wal_archiving_is_dropped() {
+    let settings =
+        Settings::from_parts(core(WalgMode::Disabled), secrets(Some(walg_credentials())))
+            .expect("assemble");
 
-    let failure = Settings::load(Some(std::path::Path::new("/nonexistent/backito.toml")))
-        .expect_err("missing file must fail");
-
-    clear_credentials();
-    assert!(matches!(failure, ConfigError::ReadFile { .. }));
-}
-
-#[test]
-fn a_service_resolves_against_the_compose_label_by_default() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        service = "db"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        "#});
-    set_credentials("test-access-key");
-
-    let settings = Settings::load(Some(config.path())).expect("load");
-
-    clear_credentials();
-    assert_eq!(
-        settings.database.container,
-        ContainerSource::Service {
-            label: "com.docker.compose.service".to_owned(),
-            service: "db".to_owned(),
-        }
-    );
-}
-
-#[test]
-fn container_label_overrides_the_default_for_other_orchestrators() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        service = "db"
-        container_label = "uncloud.service.name"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        "#});
-    set_credentials("test-access-key");
-
-    let settings = Settings::load(Some(config.path())).expect("load");
-
-    clear_credentials();
-    assert_eq!(
-        settings.database.container,
-        ContainerSource::Service {
-            label: "uncloud.service.name".to_owned(),
-            service: "db".to_owned(),
-        }
-    );
-}
-
-#[test]
-fn naming_both_a_container_and_a_service_is_refused() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        container = "app-db"
-        service = "db"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        "#});
-    set_credentials("test-access-key");
-
-    let failure = Settings::load(Some(config.path())).expect_err("both cannot hold");
-
-    clear_credentials();
-    assert!(matches!(failure, ConfigError::ContainerOverSpecified));
-}
-
-#[test]
-fn naming_neither_a_container_nor_a_service_is_refused() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-        "#});
-    set_credentials("test-access-key");
-
-    let failure = Settings::load(Some(config.path())).expect_err("one of the two is required");
-
-    clear_credentials();
-    assert!(matches!(failure, ConfigError::ContainerUnspecified));
-}
-
-#[test]
-fn a_config_without_a_schedule_table_gets_the_defaults() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(minimal_config());
-    set_credentials("test-access-key");
-
-    let settings = Settings::load(Some(config.path())).expect("load");
-
-    clear_credentials();
-    assert_eq!(settings.schedule, ScheduleSettings::default());
-    assert_eq!(settings.schedule.backup_interval.as_secs(), 24 * 60 * 60);
-    assert_eq!(
-        settings.schedule.verify_interval.as_secs(),
-        7 * 24 * 60 * 60
-    );
-    assert_eq!(settings.schedule.retain, 7);
-}
-
-#[test]
-fn a_schedule_table_is_read_in_human_units() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        container = "app-db"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-
-        [schedule]
-        backup_interval = "6h"
-        verify_interval = "0s"
-        retain = 3
-        "#});
-    set_credentials("test-access-key");
-
-    let settings = Settings::load(Some(config.path())).expect("load");
-
-    clear_credentials();
-    assert_eq!(settings.schedule.backup_interval.as_secs(), 6 * 60 * 60);
-    assert!(settings.schedule.verify_interval.is_disabled());
-    assert_eq!(settings.schedule.retain, 3);
-}
-
-#[test]
-fn an_unreadable_interval_names_the_field_it_came_from() {
-    let _turn = ENV_TURN
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let config = write_config(indoc! {r#"
-        [database]
-        label = "app"
-        container = "app-db"
-        name = "postgres"
-        image = "postgres:17"
-
-        [storage]
-        endpoint = "https://account.r2.cloudflarestorage.com"
-        bucket = "app-database-backups"
-
-        [schedule]
-        backup_interval = "every day"
-        "#});
-    set_credentials("test-access-key");
-
-    let failure = Settings::load(Some(config.path())).expect_err("not an interval");
-
-    clear_credentials();
-    assert!(
-        failure.to_string().contains("backup_interval"),
-        "the message should name the field, got: {failure}"
-    );
+    assert!(settings.walg_runtime().is_none());
 }
