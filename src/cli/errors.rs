@@ -89,6 +89,9 @@ impl CliError {
                 "export BACKITO_ACCESS_KEY_ID and BACKITO_SECRET_ACCESS_KEY, \
                  or run the command through your secret manager",
             ),
+            Self::Config(ConfigError::MissingEndpoint) => {
+                Some("set endpoint under [storage] in backito.toml, or export BACKITO_ENDPOINT")
+            }
             Self::Backup(BackupError::Database(_)) | Self::Restore(RestoreError::Database(_)) => {
                 Some("check the container name in backito.toml and that it is running")
             }

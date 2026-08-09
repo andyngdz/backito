@@ -33,6 +33,10 @@ pub enum ConfigError {
         variable: String,
     },
 
+    /// The storage endpoint is in neither the config nor the environment.
+    #[error("[storage] endpoint is unset: put it in the config or set BACKITO_ENDPOINT")]
+    MissingEndpoint,
+
     /// An interval in `[schedule]` could not be read.
     #[error("read {field}: {source}")]
     ParseInterval {
