@@ -85,13 +85,13 @@ impl CliError {
             Self::Init(InitError::ConfigExists { .. }) => {
                 Some("edit the existing file, or re-run with --force to replace it")
             }
-            Self::Config(ConfigError::MissingCredential { .. }) => Some(
-                "export BACKITO_ACCESS_KEY_ID and BACKITO_SECRET_ACCESS_KEY, \
-                 or run the command through your secret manager",
+            Self::Config(ConfigError::MissingWalgCredentials) => Some(
+                "export BACKITO_WALG_ACCESS_KEY_ID and BACKITO_WALG_SECRET_ACCESS_KEY, \
+                 or remove the [walg] section to take only logical backups",
             ),
-            Self::Config(ConfigError::MissingEndpoint) => {
-                Some("set endpoint under [storage] in backito.toml, or export BACKITO_ENDPOINT")
-            }
+            Self::Config(ConfigError::MissingEnvVar { .. }) => Some(
+                "set the named variable, or pass --config to read the settings from a file instead",
+            ),
             Self::Backup(BackupError::Database(_)) | Self::Restore(RestoreError::Database(_)) => {
                 Some("check the container name in backito.toml and that it is running")
             }
@@ -112,6 +112,7 @@ impl CliError {
                  com.docker.compose.service for compose, uncloud.service.name for uncloud",
             ),
             Self::Config(ConfigError::ParseFile { .. })
+            | Self::Config(ConfigError::InvalidEnvValue { .. })
             | Self::Backup(_)
             | Self::Verify(_)
             | Self::Restore(_)

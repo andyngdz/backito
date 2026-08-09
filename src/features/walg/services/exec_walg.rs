@@ -5,7 +5,7 @@ use std::process::Command;
 
 use super::super::WalgError;
 use super::environment::walg_environment;
-use crate::infra::config::WalgSettings;
+use crate::infra::config::{WalgCredentials, WalgSettings};
 
 /// Replaces this process with `wal-g <args>`.
 ///
@@ -16,10 +16,14 @@ use crate::infra::config::WalgSettings;
 ///
 /// Returns only on failure. A successful call never comes back, because this
 /// process no longer exists.
-pub fn exec_walg(settings: &WalgSettings, args: &[&str]) -> WalgError {
+pub fn exec_walg(
+    settings: &WalgSettings,
+    credentials: &WalgCredentials,
+    args: &[&str],
+) -> WalgError {
     let mut command = Command::new(&settings.binary);
     command.args(args);
-    for (name, value) in walg_environment(settings) {
+    for (name, value) in walg_environment(settings, credentials) {
         command.env(name, value);
     }
 

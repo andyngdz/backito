@@ -72,19 +72,9 @@ impl DatabaseFile {
     /// Settles `container` and `service` into one source, or explains why the
     /// pair as written cannot be honoured.
     pub fn into_settings(self) -> Result<DatabaseSettings, ConfigError> {
-        let container = match (self.container, self.service) {
-            (Some(_), Some(_)) => return Err(ConfigError::ContainerOverSpecified),
-            (Some(name), None) => ContainerSource::Named(name),
-            (None, Some(service)) => ContainerSource::Service {
-                label: self.container_label,
-                service,
-            },
-            (None, None) => return Err(ConfigError::ContainerUnspecified),
-        };
-
         Ok(DatabaseSettings {
             label: self.label,
-            container,
+            container: resolve_container(self.container, self.service, self.container_label)?,
             name: self.name,
             user: self.user,
             image: self.image,
@@ -93,19 +83,39 @@ impl DatabaseFile {
     }
 }
 
-fn default_user() -> String {
+/// Settles the container/service pair into one source. Shared by the file and
+/// environment sources so both refuse "both" and "neither" the same way.
+pub fn resolve_container(
+    container: Option<String>,
+    service: Option<String>,
+    container_label: String,
+) -> Result<ContainerSource, ConfigError> {
+    match (container, service) {
+        (Some(_), Some(_)) => Err(ConfigError::ContainerOverSpecified),
+        (Some(name), None) => Ok(ContainerSource::Named(name)),
+        (None, Some(service)) => Ok(ContainerSource::Service {
+            label: container_label,
+            service,
+        }),
+        (None, None) => Err(ConfigError::ContainerUnspecified),
+    }
+}
+
+/// Role connected as when the config names none. Inside the container this
+/// authenticates over the unix socket, so no password is involved.
+pub fn default_user() -> String {
     "postgres".to_owned()
 }
 
 /// Label key checked when the config names a service instead of a container.
 /// Compose writes this one; uncloud writes `uncloud.service.name`, so a cluster
 /// using it has to say so.
-fn default_container_label() -> String {
+pub fn default_container_label() -> String {
     "com.docker.compose.service".to_owned()
 }
 
 /// Parallel restore jobs kept when the config omits `restore_jobs`. Matches the
 /// value backito used before the knob existed.
-fn default_restore_jobs() -> u8 {
+pub fn default_restore_jobs() -> u8 {
     4
 }

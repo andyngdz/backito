@@ -26,16 +26,27 @@ pub enum ConfigError {
         source: toml::de::Error,
     },
 
-    /// A credential variable is unset or blank.
+    /// A required environment variable is unset or blank.
     #[error("environment variable {variable} is required and must not be empty")]
-    MissingCredential {
+    MissingEnvVar {
         /// Name of the missing variable.
         variable: String,
     },
 
-    /// The storage endpoint is in neither the config nor the environment.
-    #[error("[storage] endpoint is unset: put it in the config or set BACKITO_ENDPOINT")]
-    MissingEndpoint,
+    /// An environment variable held a value that could not be parsed.
+    #[error("environment variable {variable} is not valid: {reason}")]
+    InvalidEnvValue {
+        /// Name of the variable.
+        variable: String,
+        /// Why the value could not be used.
+        reason: String,
+    },
+
+    /// The config archives WAL, but no WAL credentials were supplied.
+    #[error(
+        "WAL archiving is configured but its credentials are unset: set BACKITO_WALG_ACCESS_KEY_ID and BACKITO_WALG_SECRET_ACCESS_KEY"
+    )]
+    MissingWalgCredentials,
 
     /// An interval in `[schedule]` could not be read.
     #[error("read {field}: {source}")]

@@ -14,7 +14,7 @@ use super::environment::walg_environment;
 use crate::features::daemon::{BackupDue, due_from_age};
 use crate::features::progress::ProgressObserver;
 use crate::features::walg::services::backup_list::newest_base_age;
-use crate::infra::config::WalgSettings;
+use crate::infra::config::{WalgCredentials, WalgSettings};
 
 /// The wal-g subcommand that applies retention.
 const DELETE_COMMAND: &str = "delete";
@@ -31,15 +31,16 @@ const RETRY_AFTER: crate::domain::Interval = crate::domain::Interval::from_secs(
 /// of three.
 pub async fn run_base_loop(
     settings: &WalgSettings,
+    credentials: &WalgCredentials,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<(), WalgError> {
     loop {
-        let wait_for = match base_due(settings, Timestamp::now()).await {
+        let wait_for = match base_due(settings, credentials, Timestamp::now()).await {
             Ok(BackupDue::NotUntil { remaining }) => {
                 observer.info(&format!("a recent base backup covers the next {remaining}"));
                 remaining
             }
-            Ok(BackupDue::Now) => match push_base(settings, &observer).await {
+            Ok(BackupDue::Now) => match push_base(settings, credentials, &observer).await {
                 Ok(()) => settings.base_interval,
                 Err(failure) => {
                     observer.warn(&format!(
@@ -61,8 +62,12 @@ pub async fn run_base_loop(
 }
 
 /// Whether a base backup is due, from what wal-g reports.
-async fn base_due(settings: &WalgSettings, now: Timestamp) -> Result<BackupDue, WalgError> {
-    let listing = run_walg(settings, &["backup-list"]).await?;
+async fn base_due(
+    settings: &WalgSettings,
+    credentials: &WalgCredentials,
+    now: Timestamp,
+) -> Result<BackupDue, WalgError> {
+    let listing = run_walg(settings, credentials, &["backup-list"]).await?;
 
     Ok(due_from_age(
         newest_base_age(&listing, now),
@@ -73,10 +78,11 @@ async fn base_due(settings: &WalgSettings, now: Timestamp) -> Result<BackupDue, 
 /// Takes one base backup and applies retention.
 async fn push_base(
     settings: &WalgSettings,
+    credentials: &WalgCredentials,
     observer: &Arc<dyn ProgressObserver>,
 ) -> Result<(), WalgError> {
     observer.info("taking a base backup");
-    run_walg(settings, &["backup-push", &settings.data_dir]).await?;
+    run_walg(settings, credentials, &["backup-push", &settings.data_dir]).await?;
 
     // Retention runs only after a push landed. Deleting first would drop the
     // oldest copy in exchange for one that does not exist yet.
@@ -84,6 +90,7 @@ async fn push_base(
     observer.info(&format!("base backup complete, retaining {retain}"));
     run_walg(
         settings,
+        credentials,
         &[DELETE_COMMAND, "retain", "FULL", &retain, "--confirm"],
     )
     .await?;
@@ -92,10 +99,14 @@ async fn push_base(
 }
 
 /// Runs `wal-g` and returns its stdout.
-async fn run_walg(settings: &WalgSettings, args: &[&str]) -> Result<String, WalgError> {
+async fn run_walg(
+    settings: &WalgSettings,
+    credentials: &WalgCredentials,
+    args: &[&str],
+) -> Result<String, WalgError> {
     let mut command = Command::new(&settings.binary);
     command.args(args);
-    for (name, value) in walg_environment(settings) {
+    for (name, value) in walg_environment(settings, credentials) {
         command.env(name, value);
     }
 

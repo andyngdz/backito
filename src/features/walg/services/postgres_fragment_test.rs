@@ -1,9 +1,8 @@
 use super::{archiving_fragment, disabled_fragment};
-use std::path::Path;
 
 #[test]
 fn archiving_names_the_config_the_command_must_read() {
-    let fragment = archiving_fragment(Path::new("/etc/backito/backito.toml"));
+    let fragment = archiving_fragment("--config /etc/backito/backito.toml");
 
     assert!(fragment.contains("archive_mode = on"), "got: {fragment}");
     assert!(fragment.contains("walg archive %p"), "got: {fragment}");
@@ -17,7 +16,7 @@ fn archiving_names_the_config_the_command_must_read() {
 
 #[test]
 fn the_command_names_an_absolute_executable() {
-    let fragment = archiving_fragment(Path::new("/etc/backito/backito.toml"));
+    let fragment = archiving_fragment("--config /etc/backito/backito.toml");
 
     // Postgres runs archive_command with a minimal environment, and a bare
     // `backito` is only found when PATH happens to carry it.
@@ -33,7 +32,7 @@ fn the_command_names_an_absolute_executable() {
 
 #[test]
 fn a_quiet_database_still_archives_within_the_timeout() {
-    let fragment = archiving_fragment(Path::new("backito.toml"));
+    let fragment = archiving_fragment("--config backito.toml");
 
     // Without archive_timeout a database with little write traffic ships
     // nothing until a segment fills, which can be hours.

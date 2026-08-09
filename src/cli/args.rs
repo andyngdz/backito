@@ -12,6 +12,11 @@ pub struct Cli {
     #[arg(long, short, global = true, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
+    /// Read every non-secret setting from BACKITO_* environment variables
+    /// instead of a file. Credentials come from the environment either way.
+    #[arg(long, global = true, conflicts_with = "config")]
+    pub env: bool,
+
     /// Print internal logs to stderr, for diagnosing a failure.
     #[arg(long, short, global = true)]
     pub verbose: bool,

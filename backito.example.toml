@@ -51,8 +51,9 @@ restore_jobs = 4
 [storage]
 # S3-compatible endpoint. For Cloudflare R2:
 #   https://<account-id>.r2.cloudflarestorage.com
-# Optional here: leave it out to read it from BACKITO_ENDPOINT instead, so a
-# committed config keeps the account id out of source alongside the credentials.
+# Required. A file is read on its own, so an incomplete one is an error rather
+# than something the environment quietly finishes. To keep the account id out of
+# source entirely, drop the file and run with --env instead.
 endpoint = "https://<account-id>.r2.cloudflarestorage.com"
 
 # Bucket that holds archives. Give it its own credential: a token scoped to
