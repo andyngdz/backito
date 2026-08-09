@@ -31,7 +31,9 @@ left to fill in. Re-running refuses to clobber your file unless you pass
 `--force`.
 
 The config is gitignored on purpose: an R2 endpoint carries your account id, so
-it is per-machine setup rather than shared source. Open it and fill in
+it is per-machine setup rather than shared source. To commit the config instead,
+leave `endpoint` out and set `BACKITO_ENDPOINT` in the environment alongside the
+credentials, keeping the account id out of the file. Open it and fill in
 `endpoint` and `bucket`:
 
 ```toml
@@ -44,7 +46,7 @@ image     = "postgres:17"  # image `verify` restores into
 restore_jobs = 4           # pg_restore parallelism, drop to 1 for a tight target
 
 [storage]
-endpoint = "https://<account-id>.r2.cloudflarestorage.com"
+endpoint = "https://<account-id>.r2.cloudflarestorage.com"  # or set BACKITO_ENDPOINT
 bucket   = "app-database-backups"
 region   = "auto"
 
@@ -89,6 +91,7 @@ Credentials come from the environment:
 ```bash
 export BACKITO_ACCESS_KEY_ID='...'
 export BACKITO_SECRET_ACCESS_KEY='...'
+export BACKITO_ENDPOINT='...'          # optional, when the config omits endpoint
 ```
 
 Give the bucket its own credential. A token scoped to one bucket cannot damage

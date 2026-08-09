@@ -21,6 +21,12 @@ const ACCESS_KEY_VAR: &str = "BACKITO_ACCESS_KEY_ID";
 /// Environment variable holding the S3 secret access key.
 const SECRET_KEY_VAR: &str = "BACKITO_SECRET_ACCESS_KEY";
 
+/// Environment variable holding the S3 endpoint, used when the config omits it.
+///
+/// The endpoint carries the account id, so a project that commits its config
+/// keeps the endpoint out of it and supplies this variable instead.
+const ENDPOINT_VAR: &str = "BACKITO_ENDPOINT";
+
 /// The whole configuration a command needs.
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -38,16 +44,40 @@ pub struct Settings {
     pub walg: WalgMode,
 }
 
-/// The storage half of `backito.toml`.
-#[derive(Debug, Clone, Deserialize)]
+/// The storage half of `backito.toml`, with the endpoint resolved.
+#[derive(Debug, Clone)]
 pub struct StorageSettings {
     /// S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`.
     pub endpoint: String,
     /// Bucket that holds archives. Nothing else should write to it.
     pub bucket: String,
     /// Region label. S3-compatible services that ignore regions want `auto`.
-    #[serde(default = "default_region")]
     pub region: String,
+}
+
+/// The `[storage]` table as written, before the endpoint is resolved.
+#[derive(Debug, Deserialize)]
+struct StorageFile {
+    endpoint: Option<String>,
+    bucket: String,
+    #[serde(default = "default_region")]
+    region: String,
+}
+
+impl StorageFile {
+    /// Resolves the endpoint from the file or `BACKITO_ENDPOINT`, treating a
+    /// blank file value as absent so a committed config can omit it entirely.
+    fn into_settings(self) -> Result<StorageSettings, ConfigError> {
+        let endpoint = match self.endpoint {
+            Some(value) if !value.trim().is_empty() => value,
+            _ => endpoint_from_env()?,
+        };
+        Ok(StorageSettings {
+            endpoint,
+            bucket: self.bucket,
+            region: self.region,
+        })
+    }
 }
 
 /// Credentials for the object store, sourced from the environment only.
@@ -63,7 +93,7 @@ pub struct StorageCredentials {
 #[derive(Debug, Deserialize)]
 struct SettingsFile {
     database: DatabaseFile,
-    storage: StorageSettings,
+    storage: StorageFile,
     #[serde(default)]
     schedule: ScheduleFile,
     walg: Option<WalgFile>,
@@ -89,11 +119,12 @@ impl Settings {
                 source,
             })?;
 
-        let storage_endpoint = parsed.storage.endpoint.clone();
+        let storage = parsed.storage.into_settings()?;
+        let storage_endpoint = storage.endpoint.clone();
 
         Ok(Self {
             database: parsed.database.into_settings()?,
-            storage: parsed.storage,
+            storage,
             credentials: StorageCredentials::from_env()?,
             schedule: parsed.schedule.into_settings()?,
             walg: match parsed.walg {
@@ -102,6 +133,15 @@ impl Settings {
             },
         })
     }
+}
+
+/// Reads `BACKITO_ENDPOINT`, treating empty as absent so a blank export fails at
+/// startup rather than as a connection error mid-upload.
+fn endpoint_from_env() -> Result<String, ConfigError> {
+    std::env::var(ENDPOINT_VAR)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(ConfigError::MissingEndpoint)
 }
 
 impl StorageCredentials {
@@ -128,3 +168,7 @@ fn required_var(name: &str) -> Result<String, ConfigError> {
 #[cfg(test)]
 #[path = "settings_test.rs"]
 mod settings_test;
+
+#[cfg(test)]
+#[path = "settings_endpoint_test.rs"]
+mod settings_endpoint_test;
