@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use super::super::DaemonError;
 use super::run_daemon::{PassOutcome, run_pass};
+use super::workspace::{pass_workspace, sweep_stale};
 use crate::domain::Interval;
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
@@ -28,28 +29,35 @@ const RETRY_AFTER: Interval = Interval::from_secs(15 * 60);
 pub async fn run_loop(
     settings: &Settings,
     store: &ObjectStore,
-    working_dir: &Path,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<(), DaemonError> {
+    let swept = sweep_stale(&std::env::temp_dir());
+    if swept > 0 {
+        observer.info(&format!(
+            "removed {swept} stale workspace dirs from an earlier run"
+        ));
+    }
+
     let mut since_verify = Interval::from_secs(0);
 
     loop {
-        let wait_for = match run_pass(settings, store, working_dir, Arc::clone(&observer)).await {
-            Ok(PassOutcome::Deferred { remaining }) => {
-                observer.info(&format!("a recent archive covers the next {remaining}"));
-                remaining
-            }
-            Ok(PassOutcome::BackedUp { stored, deleted }) => {
-                observer.info(&format!("stored {stored}, deleted {deleted} old archives"));
-                settings.schedule.backup_interval
-            }
+        // A fresh workspace per pass, so the pass's multi-GB dump is freed the
+        // moment the pass is done instead of surviving the whole daemon life. A
+        // workspace that cannot even be created is a full disk, so treat it like
+        // any other failed pass and retry rather than exit.
+        let workspace = match pass_workspace() {
+            Ok(dir) => dir,
             Err(failure) => {
                 observer.warn(&format!(
-                    "backup pass failed, retrying in {RETRY_AFTER}: {failure}"
+                    "could not create a workspace, retrying in {RETRY_AFTER}: {failure}"
                 ));
-                RETRY_AFTER
+                tokio::time::sleep(RETRY_AFTER.as_duration()).await;
+                continue;
             }
         };
+        let working_dir = workspace.path();
+
+        let wait_for = backup_pass(settings, store, working_dir, &observer).await;
 
         since_verify = Interval::from_secs(since_verify.as_secs() + wait_for.as_secs());
         if verify_is_due(settings.schedule.verify_interval, since_verify) {
@@ -57,7 +65,39 @@ pub async fn run_loop(
             since_verify = Interval::from_secs(0);
         }
 
+        // Free this pass's dump before sleeping the interval; the sleep can be a
+        // full day and the guard would otherwise hold the dump on disk all day.
+        drop(workspace);
         tokio::time::sleep(wait_for.as_duration()).await;
+    }
+}
+
+/// Runs one backup pass and reports how long to wait before the next one.
+///
+/// A failed pass is logged and turned into a short retry interval rather than
+/// propagated: a scheduler that exits on its first failure stops backing up at
+/// the moment something breaks, which is the moment backups matter most.
+async fn backup_pass(
+    settings: &Settings,
+    store: &ObjectStore,
+    working_dir: &Path,
+    observer: &Arc<dyn ProgressObserver>,
+) -> Interval {
+    match run_pass(settings, store, working_dir, Arc::clone(observer)).await {
+        Ok(PassOutcome::Deferred { remaining }) => {
+            observer.info(&format!("a recent archive covers the next {remaining}"));
+            remaining
+        }
+        Ok(PassOutcome::BackedUp { stored, deleted }) => {
+            observer.info(&format!("stored {stored}, deleted {deleted} old archives"));
+            settings.schedule.backup_interval
+        }
+        Err(failure) => {
+            observer.warn(&format!(
+                "backup pass failed, retrying in {RETRY_AFTER}: {failure}"
+            ));
+            RETRY_AFTER
+        }
     }
 }
 
