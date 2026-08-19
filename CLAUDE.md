@@ -14,7 +14,7 @@ command reference and the wal-g point-in-time-recovery story.
 
 ```bash
 cargo build                       # debug build
-cargo test                        # run all tests (213 test fns, all colocated)
+cargo test                        # run all tests (257 test fns, all colocated)
 cargo test <name>                 # filter by test-fn substring
 cargo test -- verify              # e.g. everything touching verify
 cargo clippy --all-targets        # lint; keep clean
@@ -41,7 +41,9 @@ Four layers, dependencies point inward (`cli` → `features` → `domain`, with
   public surface.
 - **`infra/`** — adapters for everything outside the process: `config` (settings
   + secrets), `docker` (drives Postgres through the `docker` CLI),
-  `object_store` (one S3 bucket via `object_store` crate), `logging`.
+  `object_store` (one S3 bucket via `object_store` crate, split into `upload`,
+  `download`, and shared `failures`), `logging`, `workspace` (locked scratch
+  dirs), `shutdown` (SIGTERM/SIGINT).
 - **`cli/`** — parse args (`args.rs`), `dispatch` to one command handler per
   subcommand (`commands/`), return a `CommandReport`. Never writes stdout.
 
@@ -77,6 +79,24 @@ under an orchestrator does not go stale) — exactly one, enforced at config loa
 behind the source) is not loss, and a missing checksum *is* a failure. This
 logic lives in `features/verify` — read `domain.rs` there before changing what
 counts as a pass.
+
+**Retention only ever runs behind a whole archive.** `daemon` prunes after a
+backup lands, and skips pruning when the stored size does not match what was
+sent. `retain = 0` is refused at config load. A one-shot `backup` never prunes.
+Anything that widens what deletes, or when, is the highest-consequence change in
+this repo.
+
+**An archive key is a filename.** `ArchiveName::from_key` is for keys that came
+from the bucket; anything a person typed goes through `ArchiveName::parse_for`,
+which checks the label and requires a canonical `YYYYmmdd-HHMM` stamp. That
+stamp check is what keeps a path separator out of a value that gets joined onto
+the workspace path. The format itself lives in `domain/archive.rs` and has one
+definition, because the writer and the reader drifting apart makes the daemon
+re-dump on every pass.
+
+**Long-running children are spawned with `kill_on_drop`.** The daemon abandons
+the pass in flight when it is asked to stop, and that only cleans up if the
+`docker` client goes with it.
 
 ## Tests
 

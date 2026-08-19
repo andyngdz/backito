@@ -1,5 +1,7 @@
 use super::run;
+use crate::cli::CliError;
 use crate::features::progress::{ProgressObserver, SilentObserver};
+use crate::features::verify::VerifyError;
 use crate::infra::config::ContainerSource;
 use crate::infra::config::ScheduleSettings;
 use crate::infra::config::WalgMode;
@@ -40,6 +42,11 @@ async fn an_unreachable_bucket_fails_rather_than_reporting_a_pass() {
         .expect_err("an unreachable bucket must fail the verification");
 
     // A verification that cannot fetch the archive has not verified anything;
-    // it must never come back as a pass.
-    assert!(!failure.to_string().is_empty());
+    // it must never come back as a pass. Nor as a Mismatch: exit code 2 means
+    // "ran and did not match", which a scheduled check reads very differently
+    // from "could not run".
+    assert!(
+        matches!(failure, CliError::Verify(VerifyError::Storage(_))),
+        "expected a storage failure, got {failure:?}"
+    );
 }

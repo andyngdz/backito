@@ -1,6 +1,8 @@
 //! Command-line grammar.
 
 use clap::{Parser, Subcommand};
+
+use super::CliError;
 use std::path::PathBuf;
 
 /// Back up a containerised Postgres database to S3-compatible storage, and
@@ -25,6 +27,33 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
+
+impl Cli {
+    /// Refuses the config-source flags on a command that cannot act on either.
+    ///
+    /// Both are global, so `backito init --config /etc/foo.toml` parses happily
+    /// and then writes `./backito.toml`. Naming the flag beats leaving someone
+    /// believing they initialised a file that was never touched.
+    pub fn refuse_config_flags(&self, command: &'static str) -> Result<(), CliError> {
+        if self.config.is_some() {
+            return Err(CliError::FlagNotUsedHere {
+                command,
+                flag: "--config",
+            });
+        }
+        if self.env {
+            return Err(CliError::FlagNotUsedHere {
+                command,
+                flag: ENV_FLAG,
+            });
+        }
+
+        Ok(())
+    }
+}
+
+/// The flag that switches the whole configuration over to the environment.
+pub const ENV_FLAG: &str = "--env";
 
 /// The commands `backito` offers.
 #[derive(Debug, Subcommand)]
@@ -105,6 +134,20 @@ pub enum Command {
     ///   backito daemon --config prod.toml
     Daemon,
 
+    /// List the archives stored for this database, oldest first.
+    ///
+    /// Prints one key per line with its size and age, so a key can be copied
+    /// straight into `--archive`. Reads the bucket and writes nothing.
+    ///
+    /// Examples:
+    ///   backito list
+    ///   backito list --keys-only
+    List {
+        /// Print only the keys, for piping into another command.
+        #[arg(long)]
+        keys_only: bool,
+    },
+
     /// Report whether a recent enough backup exists. Exits 1 when none does.
     ///
     /// Built for a container healthcheck. It asks the bucket rather than a local
@@ -170,3 +213,7 @@ pub enum WalgCommand {
         args: Vec<String>,
     },
 }
+
+#[cfg(test)]
+#[path = "args_test.rs"]
+mod args_test;

@@ -40,9 +40,17 @@ pub async fn prune_archives(
         store.delete(&key).await?;
         // The sidecar is best-effort: an archive whose checksum is already gone
         // still has to lose its dump, and failing the pass here would leave the
-        // bucket growing forever over one orphaned file.
+        // bucket growing forever over one orphaned file. Said out loud though,
+        // because nothing else ever will: `belongs_to` excludes sidecars, so one
+        // left behind here is never a candidate again and stays in the bucket.
         let checksum_key = ArchiveName::from_key(key.clone()).checksum_key();
-        let _ = store.delete(&checksum_key).await;
+        if let Err(failure) = store.delete(&checksum_key).await {
+            tracing::warn!(
+                key = %checksum_key,
+                %failure,
+                "could not delete a checksum sidecar, leaving it orphaned in the bucket"
+            );
+        }
         deleted.push(key);
     }
 
@@ -60,7 +68,7 @@ pub async fn prune_archives(
 /// shared with another label, or holding objects this tool did not write, loses
 /// nothing. Within one label the stamp sorts chronologically, so string order is
 /// age order and no metadata request is needed.
-pub fn archives_to_drop(stored: &[String], label: &str, retain: u32) -> Vec<String> {
+pub(super) fn archives_to_drop(stored: &[String], label: &str, retain: u32) -> Vec<String> {
     let mut archives: Vec<&String> = stored
         .iter()
         .filter(|key| ArchiveName::belongs_to(key, label))

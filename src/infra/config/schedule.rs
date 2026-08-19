@@ -49,8 +49,21 @@ impl ScheduleFile {
         Ok(ScheduleSettings {
             backup_interval: parse_interval("backup_interval", &self.backup_interval)?,
             verify_interval: parse_interval("verify_interval", &self.verify_interval)?,
-            retain: self.retain,
+            retain: checked_retain(self.retain)?,
         })
+    }
+}
+
+/// Accepts a retention count only when it keeps something.
+///
+/// Both config sources funnel through here so a bucket-emptying `0` is refused
+/// at the point it enters the process, rather than at the point it would delete.
+/// A `verify_interval` of zero is a documented way to switch verification off;
+/// retention has no such reading, because nothing survives it.
+pub fn checked_retain(retain: u32) -> Result<u32, ConfigError> {
+    match retain {
+        0 => Err(ConfigError::RetainsNothing),
+        kept => Ok(kept),
     }
 }
 
@@ -70,8 +83,12 @@ pub const DEFAULT_BACKUP_INTERVAL: Interval = Interval::from_secs(24 * 60 * 60);
 /// full restore, so it runs far less often than the backup it checks.
 pub const DEFAULT_VERIFY_INTERVAL: Interval = Interval::from_secs(7 * 24 * 60 * 60);
 
-/// A week of daily archives.
-pub const DEFAULT_RETAIN: u32 = 7;
+/// A month of daily archives.
+///
+/// Counted in archives rather than days, so it means a month only at the
+/// default daily cadence. Corruption that goes unnoticed for a fortnight still
+/// has a clean copy behind it here, which a one-week window would not.
+pub const DEFAULT_RETAIN: u32 = 30;
 
 impl Default for ScheduleSettings {
     fn default() -> Self {
@@ -97,3 +114,7 @@ fn default_verify_interval() -> String {
 fn default_retain() -> u32 {
     DEFAULT_RETAIN
 }
+
+#[cfg(test)]
+#[path = "schedule_test.rs"]
+mod schedule_test;

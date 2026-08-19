@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::super::CliError;
 use super::super::dto::CommandReport;
-use crate::domain::ArchiveName;
+use crate::domain::ArchiveChoice;
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
 use crate::features::progress::ProgressObserver;
@@ -36,7 +36,7 @@ pub async fn run(
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
     let request = RestoreRequest {
-        archive: archive.map(ArchiveName::from_key),
+        archive: ArchiveChoice::parse(archive, &settings.database.label)?,
         authorisation,
         jobs: settings.database.restore_jobs,
     };

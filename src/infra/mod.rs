@@ -5,4 +5,5 @@ pub mod config;
 pub mod docker;
 pub mod logging;
 pub mod object_store;
+pub mod shutdown;
 pub mod workspace;

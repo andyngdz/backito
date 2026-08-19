@@ -9,8 +9,9 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::DockerError;
-use super::container::{DOCKER_BIN, DockerSubcommand, run_docker, trailing_stderr};
+use super::container::{DOCKER_BIN, DockerSubcommand, run_docker};
 use super::count_query::{counts_sql, list_tables_sql, parse_counts, parse_identifiers};
+use super::stderr::trailing_stderr;
 use crate::domain::TableCounts;
 
 /// The Postgres command-line tools this adapter drives.
@@ -41,6 +42,13 @@ const DUMP_COMPRESSION: &str = "--compress=3";
 
 /// Custom format is required: it is the only one `pg_restore -j` can parallelise.
 const DUMP_FORMAT: &str = "--format=custom";
+
+/// Where an archive is staged inside a container before `pg_restore` reads it.
+///
+/// Shared by `verify` and `restore`, because it is the path `copy_into` writes
+/// to and `restore_in_container` reads from: two copies of it could drift into
+/// a restore that reads a file nothing wrote.
+pub const ARCHIVE_IN_CONTAINER: &str = "/tmp/backito-restore.dump";
 
 /// Ownership and ACL statements are dropped from both ends, so an archive
 /// restores into a database whose roles differ from the source's.
@@ -96,6 +104,12 @@ pub async fn dump_to_file(target: &PostgresTarget, destination: &Path) -> Result
     // stderr, because it only drains the handles that are actually pipes.
     let child = Command::new(DOCKER_BIN)
         .args(&args)
+        // A dump can run for an hour, and the daemon abandons the pass when it
+        // is asked to stop. Without this the `docker` client outlives the
+        // process that started it and keeps an exec open against a production
+        // database. It kills the client rather than the server-side process, so
+        // it bounds the leak rather than removing it entirely.
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::from(file))
         .stderr(Stdio::piped())
@@ -154,6 +168,7 @@ pub async fn restore_in_container(
 
     let output = Command::new(DOCKER_BIN)
         .args(&args)
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .output()
         .await

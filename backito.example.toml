@@ -63,6 +63,22 @@ bucket = "app-database-backups"
 # Region label. Services that ignore regions (R2 among them) want "auto".
 region = "auto"
 
+# How often to back up, how often to prove an archive restores, and how many
+# archives to keep. Only `daemon` and `health` read this table, and only `daemon`
+# deletes anything: a one-shot `backito backup` never prunes.
+#
+# [schedule]
+# backup_interval = "24h"
+#
+# A restore-and-compare costs a full download and a full restore, so it runs far
+# less often than the backup it checks. "0s" switches it off.
+# verify_interval = "7d"
+#
+# Counted in archives, not days, so 30 is a month only at the daily cadence
+# above. There is no reading of 0 that keeps a backup, so it is refused rather
+# than obeyed.
+# retain = 30
+
 # Physical backups, for point-in-time recovery. Leave this section out and none
 # of it runs: the logical backups above are independent of it.
 #

@@ -38,7 +38,7 @@ pub enum BackupFreshness {
 }
 
 /// The staleness budget for a given backup cadence.
-pub fn staleness_budget(cadence: Interval) -> Interval {
+pub(super) fn staleness_budget(cadence: Interval) -> Interval {
     cadence.times(STALE_AFTER_INTERVALS)
 }
 

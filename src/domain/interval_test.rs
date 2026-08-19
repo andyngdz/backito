@@ -103,3 +103,20 @@ fn display_canonicalises_to_the_largest_whole_unit() {
         assert_eq!(parsed.to_string(), canonical, "canonicalising {written}");
     }
 }
+
+#[test]
+fn intervals_add_up() {
+    assert_eq!(
+        Interval::from_secs(90).saturating_add(Interval::from_secs(30)),
+        Interval::from_secs(120)
+    );
+}
+
+#[test]
+fn an_absurd_sum_clamps_instead_of_overflowing() {
+    // The scheduler accumulates elapsed time in a loop, so an overflow here
+    // would panic mid-schedule rather than at load time.
+    let huge = Interval::from_secs(u64::MAX);
+
+    assert_eq!(huge.saturating_add(huge), huge);
+}

@@ -58,11 +58,14 @@ fn objects_this_tool_did_not_write_are_never_deleted() {
 }
 
 #[test]
-fn retaining_none_drops_every_archive_for_the_label() {
+fn the_sidecar_is_never_a_candidate_on_its_own() {
+    // A `.sha256` travels with its dump and is deleted alongside it. If it were
+    // ever picked as a candidate itself, `checksum_key` would build
+    // `....sha256.sha256` and the real archive would outlive its checksum.
     let stored = keys(&[
-        "app-backup-20260801-0900.dump",
-        "app-backup-20260802-0900.dump",
+        "app-backup-20260801-0900.dump.sha256",
+        "app-backup-20260802-0900.dump.sha256",
     ]);
 
-    assert_eq!(archives_to_drop(&stored, "app", 0).len(), 2);
+    assert!(archives_to_drop(&stored, "app", 1).is_empty());
 }

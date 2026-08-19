@@ -3,7 +3,7 @@
 mod domain;
 mod traits;
 
-pub use domain::Step;
+pub use domain::{Step, human_bytes};
 #[cfg(test)]
 pub use traits::SilentObserver;
 pub use traits::{MeteredReader, ProgressObserver};

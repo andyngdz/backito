@@ -6,12 +6,8 @@
 //! database again.
 
 use jiff::Timestamp;
-use jiff::civil::DateTime;
 
-use crate::domain::Interval;
-
-/// Format the archive stamp is written in, e.g. `20260803-0942`.
-const STAMP_FORMAT: &str = "%Y%m%d-%H%M";
+use crate::domain::{Interval, stamp_taken_at};
 
 /// What the bucket says about the most recent archive for a label.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +83,7 @@ pub fn archive_age(newest: &NewestArchive, now: Timestamp) -> ArchiveAge {
         return ArchiveAge::Unknown;
     };
 
-    let Some(taken_at) = parse_stamp(stamp) else {
+    let Some(taken_at) = stamp_taken_at(stamp) else {
         return ArchiveAge::Unknown;
     };
 
@@ -97,15 +93,6 @@ pub fn archive_age(newest: &NewestArchive, now: Timestamp) -> ArchiveAge {
     }
 
     ArchiveAge::Known(Interval::from_secs(elapsed.unsigned_abs()))
-}
-
-/// Reads a stamp as a UTC instant, or `None` when it is not one.
-fn parse_stamp(stamp: &str) -> Option<Timestamp> {
-    DateTime::strptime(STAMP_FORMAT, stamp)
-        .ok()?
-        .to_zoned(jiff::tz::TimeZone::UTC)
-        .ok()
-        .map(|zoned| zoned.timestamp())
 }
 
 #[cfg(test)]

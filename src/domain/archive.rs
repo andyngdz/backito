@@ -3,6 +3,12 @@
 
 use std::fmt;
 
+use super::ArchiveKeyError;
+
+use jiff::Timestamp;
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+
 /// Filename stem shared by every archive this tool writes.
 const ARCHIVE_STEM: &str = "backup";
 
@@ -44,8 +50,27 @@ impl ArchiveName {
     }
 
     /// Adopts an existing object key, e.g. one listed from the bucket.
+    ///
+    /// Trusted input only. A key that came from a person goes through
+    /// [`ArchiveName::parse_for`] instead, which checks it before it reaches a
+    /// path join.
     pub fn from_key(key: impl Into<String>) -> Self {
         Self(key.into())
+    }
+
+    /// Adopts a key a person typed, refusing anything this tool did not write
+    /// for `label`.
+    ///
+    /// A key becomes a local filename when the archive is downloaded, so an
+    /// unchecked one carrying `../` escapes the scratch directory and writes
+    /// wherever it points. Matching the label is not enough on its own:
+    /// `app-backup-../../x.dump` clears that test. The stamp has to be a stamp,
+    /// which is what rules out a separator, and it also catches the common slip
+    /// of passing the `.sha256` sidecar instead of the dump.
+    pub fn parse_for(key: &str, label: &str) -> Option<Self> {
+        let stamp = Self::belongs_to(key, label).then(|| stamp_of(key))??;
+
+        stamp_taken_at(stamp).map(|_| Self(key.to_owned()))
     }
 
     /// The key of the checksum sidecar that travels with this archive.
@@ -78,20 +103,103 @@ impl ArchiveName {
     /// request per candidate. `None` for a key that is not one of ours, which is
     /// the same question `belongs_to` answers and the reason this cannot guess.
     pub fn stamp(&self) -> Option<&str> {
-        let separator = format!("-{ARCHIVE_STEM}-");
-        let extension = format!(".{}", ArchiveFile::Dump.extension());
-
-        // From the right: a label may itself contain `-backup-`, and the stamp
-        // is always the last thing before the extension.
-        let (_, after_stem) = self.0.rsplit_once(&separator)?;
-        after_stem.strip_suffix(&extension)
+        stamp_of(&self.0)
     }
+}
+
+/// The stamp text in `key`, without checking that it reads as a time.
+///
+/// From the right: a label may itself contain `-backup-`, and the stamp is
+/// always the last thing before the extension.
+fn stamp_of(key: &str) -> Option<&str> {
+    let separator = format!("-{ARCHIVE_STEM}-");
+    let extension = format!(".{}", ArchiveFile::Dump.extension());
+
+    let (_, after_stem) = key.rsplit_once(&separator)?;
+    after_stem.strip_suffix(&extension)
+}
+
+/// Format the UTC stamp inside a key is written and read in.
+///
+/// One definition, because the writer and the reader have to agree. When they
+/// drifted apart the daemon read every archive as undatable, which reads as
+/// "nothing has been backed up" and dumps the database on every pass.
+const STAMP_FORMAT: &str = "%Y%m%d-%H%M";
+
+/// Renders `moment` as an archive key carries it.
+///
+/// Takes the instant rather than reading the clock, so the caller owns the
+/// time and this stays pure.
+pub fn stamp_at(moment: Timestamp) -> String {
+    moment.strftime(STAMP_FORMAT).to_string()
+}
+
+/// Reads a stamp back as the UTC instant it names, or `None` when it is not one.
+///
+/// Accepts only the canonical spelling, checked by rendering the parsed instant
+/// again and requiring the same text. `strptime` alone is looser than the format
+/// suggests: it reads `%H%M` out of `094` as 09:04, so a truncated key would
+/// pass. Insisting on a round trip needs no second set of rules to stay in step
+/// with `stamp_at`.
+///
+/// This is also what makes a typed key safe to join onto a path. A canonical
+/// stamp is digits and one hyphen, so nothing that parses here carries a
+/// directory separator or a `..` segment.
+pub fn stamp_taken_at(stamp: &str) -> Option<Timestamp> {
+    let moment = DateTime::strptime(STAMP_FORMAT, stamp)
+        .ok()?
+        .to_zoned(TimeZone::UTC)
+        .ok()
+        .map(|zoned| zoned.timestamp())?;
+
+    (stamp_at(moment) == stamp).then_some(moment)
 }
 
 impl fmt::Display for ArchiveName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }
+}
+
+/// Which archive a command was told to work on.
+///
+/// An enum rather than `Option<ArchiveName>` because the absent case is a real
+/// instruction, not a missing value: it means "whichever is newest", which is
+/// resolved against the bucket rather than defaulted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArchiveChoice {
+    /// Whichever archive for this label is newest.
+    Newest,
+    /// This archive, named by a person and already checked.
+    Named(ArchiveName),
+}
+
+impl ArchiveChoice {
+    /// Reads a `--archive` value, refusing a key this tool did not write.
+    ///
+    /// Lives here so `verify` and `restore` get the same check without either
+    /// owning it, and so the check sits next to the naming rules it enforces.
+    pub fn parse(key: Option<String>, label: &str) -> Result<Self, ArchiveKeyError> {
+        let Some(key) = key else {
+            return Ok(Self::Newest);
+        };
+
+        ArchiveName::parse_for(&key, label)
+            .map(Self::Named)
+            .ok_or(ArchiveKeyError::NotOurs {
+                key,
+                label: label.to_owned(),
+            })
+    }
+}
+
+/// One archive as a bucket holds it: what it is called, and how big it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredArchive {
+    /// Key the archive is stored under.
+    pub name: ArchiveName,
+    /// Size the store reports for it.
+    pub bytes: u64,
 }
 
 /// A hex-encoded SHA-256 digest of an archive.

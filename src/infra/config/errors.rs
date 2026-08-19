@@ -66,4 +66,27 @@ pub enum ConfigError {
     /// `[database]` names neither a container nor a service.
     #[error("[database] needs either container or service to say which container runs Postgres")]
     ContainerUnspecified,
+
+    /// `[storage].endpoint` is not a URL the store can request.
+    ///
+    /// Checked here because `object_store` panics rather than returning when it
+    /// builds a request from one, and the first endpoint most people have is the
+    /// `https://<account-id>...` placeholder that `init` writes.
+    #[error("[storage] endpoint {endpoint} is not a usable URL: {reason}")]
+    UnusableEndpoint {
+        /// The endpoint as written.
+        endpoint: String,
+        /// What is wrong with it.
+        reason: &'static str,
+    },
+
+    /// `[schedule]` keeps no archives at all.
+    ///
+    /// Retention runs immediately after a backup lands, so zero would delete the
+    /// archive that pass just wrote along with every older one. No deployment
+    /// wants that, and the cost of accepting the typo is the whole bucket.
+    #[error(
+        "[schedule] retain is 0, which would delete every archive including the one just taken"
+    )]
+    RetainsNothing,
 }

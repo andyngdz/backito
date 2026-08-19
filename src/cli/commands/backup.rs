@@ -5,6 +5,7 @@ use std::sync::Arc;
 use super::super::CliError;
 use super::super::dto::CommandReport;
 use super::super::reporter::human_bytes;
+use crate::domain::stamp_at;
 use crate::features::backup::{BackupError, keep_archive, run_backup};
 use crate::features::progress::ProgressObserver;
 use crate::infra::config::Settings;
@@ -42,7 +43,7 @@ pub async fn run(
     let workspace =
         Workspace::acquire("backito-").map_err(|source| CliError::WorkingDirectory { source })?;
 
-    let stamp = jiff::Timestamp::now().strftime("%Y%m%d-%H%M").to_string();
+    let stamp = stamp_at(jiff::Timestamp::now());
     let outcome = run_backup(
         settings,
         &store,
@@ -65,7 +66,7 @@ pub async fn run(
             let directory =
                 std::env::current_dir().map_err(|source| CliError::WorkingDirectory { source })?;
             let kept = keep_archive(&outcome.local_path, &directory, outcome.archive.as_str())?;
-            observer.warn(&format!("kept local copy at {}", kept.display()));
+            observer.info(&format!("kept local copy at {}", kept.display()));
         }
         LocalCopy::Discard => {}
     }

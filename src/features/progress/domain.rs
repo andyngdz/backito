@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use indicatif::HumanBytes;
+
 /// One named stage of work. Every command reports the same vocabulary, so the
 /// output shape does not change between `backup`, `verify`, and `restore`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +55,15 @@ impl fmt::Display for Step {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.label())
     }
+}
+
+/// Formats `bytes` in binary units, e.g. `882.34 MiB`.
+///
+/// Every size a user sees comes through here. Two formatters were in use before,
+/// one per layer, which meant the same number could be printed two ways in a
+/// single run depending on which step reported it.
+pub fn human_bytes(bytes: u64) -> String {
+    HumanBytes(bytes).to_string()
 }
 
 #[cfg(test)]

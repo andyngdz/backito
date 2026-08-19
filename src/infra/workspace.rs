@@ -6,7 +6,11 @@
 //! outlive the run. Each run holds an exclusive lock on its own workspace for
 //! its whole life; the OS drops that lock the instant the process dies, however
 //! it dies. A later run then tells a dead workspace (lock free) from a live one
-//! (lock held) with certainty, with no guess at directory ages.
+//! (lock held) with certainty.
+//!
+//! Age is a second, narrower guard rather than the decision. It only covers the
+//! moment between a directory being created and its owner locking it, which no
+//! lock can speak for because there is not one yet.
 
 use std::fs::File;
 use std::path::Path;
@@ -29,14 +33,16 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Reclaims dead scratch dirs, then opens a fresh locked one under `prefix`.
+    /// Opens a fresh locked scratch dir under `prefix`, then reclaims dead ones.
     ///
     /// `prefix` names the owning command, e.g. `backito-verify-`. The reclaim
     /// runs on every acquire so any command's start clears leftovers, and it can
     /// never remove a live run's dir because that run holds its lock.
     pub fn acquire(prefix: &str) -> std::io::Result<Self> {
-        sweep_stale(&std::env::temp_dir());
-
+        // Ours is created and locked before the sweep runs, not after. In the
+        // other order there is a moment where the directory exists, matches the
+        // prefix, and is not yet locked, and a concurrent run sweeping right
+        // then would delete it out from under us.
         let directory = Builder::new().prefix(prefix).tempdir()?;
         let lock = File::open(directory.path())?;
         // A just-created unique directory can only be locked by us, so a refusal
@@ -48,6 +54,8 @@ impl Workspace {
                 "a fresh workspace was already locked",
             ),
         })?;
+
+        sweep_stale(&std::env::temp_dir(), SETTLE_BEFORE_RECLAIM);
 
         Ok(Self {
             _lock: lock,
@@ -61,12 +69,16 @@ impl Workspace {
     }
 }
 
-/// Removes every scratch directory under `root` whose owning run has exited.
+/// Removes every scratch directory under `root` whose owning run has exited and
+/// which has existed for at least `settled`.
 ///
 /// An unreadable root, or an entry that will not lock or delete, is skipped
 /// rather than failing a startup: a leftover dir is recoverable, a daemon that
 /// refuses to start is not.
-fn sweep_stale(root: &Path) {
+///
+/// `settled` is a parameter rather than a constant read inside so a test can ask
+/// for the same decision without waiting out a real minute.
+fn sweep_stale(root: &Path, settled: std::time::Duration) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
@@ -77,10 +89,38 @@ fn sweep_stale(root: &Path) {
         if !name.starts_with(SCRATCH_PREFIX) {
             continue;
         }
-        if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-            reclaim_if_dead(&entry.path());
+        if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            continue;
         }
+        // Another process has the same unlocked moment between creating its
+        // workspace and locking it. Reordering above closes that window for
+        // ours; skipping anything this new closes it for theirs. A leftover
+        // waits one run to be reclaimed, which costs nothing.
+        if settled_for(&entry) < settled {
+            continue;
+        }
+        reclaim_if_dead(&entry.path());
     }
+}
+
+/// How long a directory must have existed before the sweep will consider it.
+///
+/// Orders of magnitude longer than the gap between creating a workspace and
+/// locking it, and short enough that a dead one is still reclaimed on the next
+/// command rather than lingering.
+const SETTLE_BEFORE_RECLAIM: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long since `entry` was last written.
+///
+/// An unreadable or future-dated timestamp reads as zero, which keeps the entry
+/// out of this sweep: not reclaiming is always the recoverable answer.
+fn settled_for(entry: &std::fs::DirEntry) -> std::time::Duration {
+    entry
+        .metadata()
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|written| written.elapsed().ok())
+        .unwrap_or_default()
 }
 
 /// Removes `directory` only when no live run holds its lock.

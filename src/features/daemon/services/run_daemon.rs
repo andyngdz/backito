@@ -8,14 +8,11 @@ use jiff::Timestamp;
 use super::super::DaemonError;
 use super::due::{BackupDue, NewestArchive, backup_due};
 use super::prune::prune_archives;
-use crate::domain::Interval;
+use crate::domain::{Interval, stamp_at};
 use crate::features::backup::run_backup;
 use crate::features::progress::ProgressObserver;
 use crate::infra::config::Settings;
 use crate::infra::object_store::{ObjectStore, ObjectStoreError};
-
-/// Format the archive stamp is written in.
-const STAMP_FORMAT: &str = "%Y%m%d-%H%M";
 
 /// Runs one pass: back up if due, prune what fell out of retention, verify when
 /// the verify cadence has come round.
@@ -29,15 +26,34 @@ pub async fn run_pass(
     working_dir: &Path,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<PassOutcome, DaemonError> {
+    // One reading of the clock for the whole pass. Two would let the archive be
+    // stamped in the minute after the one the due check reasoned about, so the
+    // answers to "is a backup due" and "what is it called" could disagree.
+    let started_at = Timestamp::now();
+
     let newest = newest_archive(store, &settings.database.label).await?;
-    let verdict = backup_due(&newest, settings.schedule.backup_interval, Timestamp::now());
+    let verdict = backup_due(&newest, settings.schedule.backup_interval, started_at);
 
     if let BackupDue::NotUntil { remaining } = verdict {
         return Ok(PassOutcome::Deferred { remaining });
     }
 
-    let stamp = Timestamp::now().strftime(STAMP_FORMAT).to_string();
+    let stamp = stamp_at(started_at);
     let outcome = run_backup(settings, store, working_dir, &stamp, Arc::clone(&observer)).await?;
+
+    // Retention deletes on the strength of the archive that just landed, so it
+    // only runs once that archive is known whole. Evicting a restorable copy in
+    // favour of a truncated one is the single mistake this tool must not make,
+    // and the old archives are exactly what recovery needs while the short
+    // upload is investigated.
+    if !outcome.sizes_match() {
+        return Ok(PassOutcome::Truncated {
+            stored: outcome.archive.to_string(),
+            local_bytes: outcome.local_bytes,
+            stored_bytes: outcome.stored_bytes,
+        });
+    }
+
     let pruned = prune_archives(store, &settings.database.label, settings.schedule.retain).await?;
 
     Ok(PassOutcome::BackedUp {
@@ -55,6 +71,16 @@ pub enum PassOutcome {
         stored: String,
         /// Archives deleted to honour retention.
         deleted: usize,
+    },
+    /// The archive uploaded, but the store reports a different size than was
+    /// sent. Retention was skipped, so every older archive is still there.
+    Truncated {
+        /// Key the archive landed under.
+        stored: String,
+        /// Size of the archive on disk.
+        local_bytes: u64,
+        /// Size the store reports for the uploaded object.
+        stored_bytes: u64,
     },
     /// A recent enough archive already exists.
     Deferred {

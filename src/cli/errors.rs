@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::domain::ArchiveKeyError;
 use crate::features::backup::BackupError;
 use crate::features::daemon::DaemonError;
 use crate::features::init::InitError;
@@ -14,7 +15,7 @@ use crate::infra::object_store::ObjectStoreError;
 
 /// How a command ended, as the shell sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
+#[repr(u8)]
 pub enum ExitStatus {
     /// The command did what was asked.
     Success = 0,
@@ -27,8 +28,12 @@ pub enum ExitStatus {
 
 impl ExitStatus {
     /// The code handed to the process exit.
-    pub fn code(self) -> i32 {
-        self as i32
+    ///
+    /// `u8` because that is what `ExitCode` takes. Returning a wider integer
+    /// only to cast it back at the entrypoint invites a truncation that this
+    /// type makes impossible.
+    pub fn code(self) -> u8 {
+        self as u8
     }
 }
 
@@ -73,6 +78,22 @@ pub enum CliError {
         /// Underlying io failure.
         source: std::io::Error,
     },
+
+    /// A global flag was passed to a command that cannot act on it.
+    ///
+    /// Named rather than ignored: silently discarding `--config /etc/foo.toml`
+    /// leaves someone believing they initialised a file that was never touched.
+    #[error("{command} does not use {flag}")]
+    FlagNotUsedHere {
+        /// Command that was run.
+        command: &'static str,
+        /// Flag it cannot act on.
+        flag: &'static str,
+    },
+
+    /// `--archive` named a key this tool did not write for the configured label.
+    #[error("{0}")]
+    ArchiveKey(#[from] ArchiveKeyError),
 }
 
 impl CliError {
@@ -95,15 +116,34 @@ impl CliError {
             Self::Backup(BackupError::Database(_)) | Self::Restore(RestoreError::Database(_)) => {
                 Some("check the container name in backito.toml and that it is running")
             }
+            // `daemon` and `health` belong here too. Both are the scheduled
+            // commands, so they are the ones whose failure is read out of a log
+            // by someone who was not watching, with the least context to hand.
             Self::Backup(BackupError::Storage(failure))
             | Self::Verify(VerifyError::Storage(failure))
-            | Self::Restore(RestoreError::Storage(failure)) => Some(Self::storage_hint(failure)),
+            | Self::Restore(RestoreError::Storage(failure))
+            | Self::Daemon(DaemonError::Storage(failure)) => Some(Self::storage_hint(failure)),
             Self::Config(
                 ConfigError::ContainerOverSpecified | ConfigError::ContainerUnspecified,
             ) => Some("set exactly one of container or service under [database]"),
             Self::Config(ConfigError::ParseInterval { .. }) => {
                 Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
             }
+            Self::Config(ConfigError::UnusableEndpoint { .. }) => Some(
+                "set [storage].endpoint to the real URL, e.g. \
+                 https://<your-account-id>.r2.cloudflarestorage.com with the id filled in",
+            ),
+            Self::Config(ConfigError::RetainsNothing) => {
+                Some("set retain to how many archives to keep, at least 1")
+            }
+            Self::FlagNotUsedHere { .. } => Some(
+                "`init` writes backito.toml into the current directory; \
+                 cd there first, or move the file afterwards",
+            ),
+            Self::ArchiveKey(_) => Some(
+                "run `backito list` to see the keys that exist, \
+                 or drop --archive to use the newest",
+            ),
             Self::Walg(WalgError::NotConfigured) => {
                 Some("add a [walg] section with an s3_prefix, or leave WAL archiving off")
             }
@@ -131,16 +171,22 @@ impl CliError {
     /// wrong thing.
     fn storage_hint(failure: &ObjectStoreError) -> &'static str {
         if failure.is_missing_object() {
-            return "no object at that key -- list the bucket to see which archives exist, \
+            return "no object at that key -- run `backito list` to see which archives exist, \
                   or drop --archive to use the newest";
         }
 
         match failure {
+            // An empty bucket answered the request, so the endpoint, the
+            // credential, and the name are all already proven. Sending the user
+            // to check them hides the one thing that is actually true: nothing
+            // has been backed up yet.
+            ObjectStoreError::NoArchives { .. } => {
+                "no archives for this label yet -- run `backito backup` to take the first one"
+            }
             ObjectStoreError::Configure { .. }
             | ObjectStoreError::Request { .. }
             | ObjectStoreError::LocalStream { .. }
-            | ObjectStoreError::LocalFile { .. }
-            | ObjectStoreError::NoArchives { .. } => {
+            | ObjectStoreError::LocalFile { .. } => {
                 "check the bucket name, endpoint, and that the credential covers this bucket"
             }
         }

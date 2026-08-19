@@ -1,7 +1,9 @@
 use super::LocalCopy;
 
 #[test]
-fn the_two_dispositions_are_distinct() {
-    // The dispatcher maps --keep onto these; nothing else may collapse them.
-    assert_ne!(LocalCopy::Keep, LocalCopy::Discard);
+fn the_keep_flag_maps_onto_the_disposition_it_names() {
+    // This is what the dispatcher calls. Getting it backwards deletes the local
+    // archive of someone who asked to keep it.
+    assert_eq!(LocalCopy::from(true), LocalCopy::Keep);
+    assert_eq!(LocalCopy::from(false), LocalCopy::Discard);
 }

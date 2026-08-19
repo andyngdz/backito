@@ -1,26 +1,23 @@
 //! Loads an archive into a real database, once the guard allows it.
 
-use humansize::{BINARY, format_size};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::super::{RestoreError, RestoreOutcome};
 use super::guard::{RestoreAuthorisation, ensure_writable, populated_tables};
-use crate::domain::ArchiveName;
-use crate::features::progress::{ProgressObserver, Step};
+use crate::domain::ArchiveChoice;
+use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::docker::{
-    PostgresTarget, copy_into, require_running, restore_in_container, trailing_stderr,
+    ARCHIVE_IN_CONTAINER, PostgresTarget, copy_into, require_running, restore_in_container,
+    trailing_stderr,
 };
 use crate::infra::object_store::ObjectStore;
-
-/// Path the archive is copied to inside the target container.
-const ARCHIVE_IN_CONTAINER: &str = "/tmp/backito-restore.dump";
 
 /// What the caller decided about a restore, separate from where the archive
 /// lives and which container receives it.
 pub struct RestoreRequest {
-    /// Archive to restore, or `None` for the newest archive in the bucket.
-    pub archive: Option<ArchiveName>,
+    /// Archive to restore, or the newest in the bucket.
+    pub archive: ArchiveChoice,
     /// Whether a target that already holds data may be written to.
     pub authorisation: RestoreAuthorisation,
     /// Parallelism `pg_restore` runs at. Lower it for a memory-capped container
@@ -43,8 +40,8 @@ pub async fn run_restore(
     observer.step_finished(Step::CheckDatabase, &target.container);
 
     let archive = match request.archive {
-        Some(named) => named,
-        None => store.latest_archive(label).await?,
+        ArchiveChoice::Named(named) => named,
+        ArchiveChoice::Newest => store.latest_archive(label).await?,
     };
     let archive_path = working_dir.join(archive.as_str());
 
@@ -53,7 +50,7 @@ pub async fn run_restore(
     observer.transfer_started(Some(bytes));
     store.download_file(archive.as_str(), &archive_path).await?;
     observer.transfer_finished();
-    observer.step_finished(Step::Download, &format_size(bytes, BINARY));
+    observer.step_finished(Step::Download, &human_bytes(bytes));
 
     observer.step_started(Step::Restore);
     copy_into(&target.container, &archive_path, ARCHIVE_IN_CONTAINER).await?;

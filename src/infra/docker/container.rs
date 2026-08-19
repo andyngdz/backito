@@ -8,12 +8,11 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::DockerError;
+use super::stderr::trailing_stderr;
 
 /// The `docker` subcommands this tool drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DockerSubcommand {
-    /// Read container state.
-    Inspect,
     /// Start a container.
     Run,
     /// Remove a container.
@@ -28,7 +27,6 @@ impl DockerSubcommand {
     /// The literal argument passed to `docker`.
     pub fn as_arg(self) -> &'static str {
         match self {
-            Self::Inspect => "inspect",
             Self::Run => "run",
             Self::Rm => "rm",
             Self::Exec => "exec",
@@ -43,6 +41,15 @@ pub const DOCKER_BIN: &str = "docker";
 /// Flag naming a container on `docker run`.
 pub const NAME_FLAG: &str = "--name";
 
+/// Narrows a `docker ps` listing.
+const FILTER_FLAG: &str = "--filter";
+
+/// Picks the one field a `docker ps` listing prints.
+const FORMAT_FLAG: &str = "--format";
+
+/// Template that prints just the container name, one per line.
+const NAMES_TEMPLATE: &str = "{{.Names}}";
+
 /// `pg_isready`, the readiness probe run inside a container.
 const PG_ISREADY: &str = "pg_isready";
 
@@ -52,13 +59,13 @@ const READY_ATTEMPTS: u32 = 60;
 /// Delay between readiness probes.
 const READY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Bytes of stderr kept in an error message.
-const STDERR_KEEP_BYTES: usize = 2000;
-
 /// Runs `docker` with `args`, returning stdout on success.
 pub async fn run_docker(operation: &str, args: &[&str]) -> Result<Vec<u8>, DockerError> {
     let output = Command::new(DOCKER_BIN)
         .args(args)
+        // `docker cp` moves the whole archive, so this is not always a quick
+        // call. An abandoned one should not outlive the process.
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .output()
         .await
@@ -79,21 +86,34 @@ pub async fn run_docker(operation: &str, args: &[&str]) -> Result<Vec<u8>, Docke
 }
 
 /// Returns true when `container` exists and is running.
+///
+/// Asks `docker ps` rather than `docker inspect` so that an absent container and
+/// an unusable docker are different answers. `inspect` exits non-zero for both,
+/// and reading that as "not running" told the operator to go check a container
+/// that was fine while the real fault was a dead socket or a permission error on
+/// it. A listing exits zero whenever docker answered at all, so only a genuine
+/// infrastructure failure propagates.
 pub async fn is_running(container: &str) -> Result<bool, DockerError> {
-    let subcommand = DockerSubcommand::Inspect.as_arg();
-    let inspected = run_docker(
+    let subcommand = DockerSubcommand::Ps.as_arg();
+    // Docker matches this filter as a regex, and a name may carry `.`, so the
+    // filter narrows the listing and the exact comparison below decides.
+    let filter = format!("name=^{container}$");
+    let listed = run_docker(
         subcommand,
-        &[subcommand, "-f", "{{.State.Running}}", container],
+        &[
+            subcommand,
+            FILTER_FLAG,
+            &filter,
+            FORMAT_FLAG,
+            NAMES_TEMPLATE,
+        ],
     )
-    .await;
+    .await?;
 
-    match inspected {
-        Ok(stdout) => Ok(String::from_utf8_lossy(&stdout).trim() == "true"),
-        // `docker inspect` exits non-zero for an unknown container, which is a
-        // "not running" answer rather than an infrastructure failure.
-        Err(DockerError::Exit { .. }) => Ok(false),
-        Err(other) => Err(other),
-    }
+    Ok(String::from_utf8_lossy(&listed)
+        .lines()
+        .map(str::trim)
+        .any(|name| name == container))
 }
 
 /// Names the running container carrying `label`=`service`.
@@ -112,7 +132,13 @@ pub async fn resolve_by_label(label: &str, service: &str) -> Result<String, Dock
     let filter = format!("label={label}={service}");
     let listed = run_docker(
         subcommand,
-        &[subcommand, "--filter", &filter, "--format", "{{.Names}}"],
+        &[
+            subcommand,
+            FILTER_FLAG,
+            &filter,
+            FORMAT_FLAG,
+            NAMES_TEMPLATE,
+        ],
     )
     .await?;
 
@@ -188,29 +214,22 @@ pub async fn wait_ready(container: &str, user: &str) -> Result<(), DockerError> 
 }
 
 /// Removes `container`, treating "no such container" as already removed.
+///
+/// A non-zero exit stays a success because every caller wants the name free
+/// rather than the command to have run, and "it was not there" is that. It is
+/// logged rather than dropped: the same exit code also covers a container
+/// another process holds, and a silent one there turns into a confusing
+/// "name already in use" from the caller that follows.
 pub async fn remove(container: &str) -> Result<(), DockerError> {
     let subcommand = DockerSubcommand::Rm.as_arg();
     match run_docker(subcommand, &[subcommand, "-f", container]).await {
-        Ok(_) | Err(DockerError::Exit { .. }) => Ok(()),
+        Ok(_) => Ok(()),
+        Err(DockerError::Exit { stderr, .. }) => {
+            tracing::debug!(container, %stderr, "docker rm reported nothing to remove");
+            Ok(())
+        }
         Err(other) => Err(other),
     }
-}
-
-/// Keeps the tail of stderr, which is where the useful line is when a tool
-/// prints a long preamble first. Cuts on a char boundary so the message stays
-/// valid UTF-8.
-pub fn trailing_stderr(stderr: &[u8]) -> String {
-    let text = String::from_utf8_lossy(stderr);
-    let trimmed = text.trim();
-    if trimmed.len() <= STDERR_KEEP_BYTES {
-        return trimmed.to_owned();
-    }
-
-    let cut_from = trimmed.len() - STDERR_KEEP_BYTES;
-    let boundary = (cut_from..trimmed.len())
-        .find(|index| trimmed.is_char_boundary(*index))
-        .unwrap_or(trimmed.len());
-    trimmed[boundary..].to_owned()
 }
 
 #[cfg(test)]

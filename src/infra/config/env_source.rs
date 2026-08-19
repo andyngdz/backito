@@ -8,7 +8,9 @@
 use super::database::{
     default_container_label, default_restore_jobs, default_user, resolve_container,
 };
-use super::schedule::{DEFAULT_BACKUP_INTERVAL, DEFAULT_RETAIN, DEFAULT_VERIFY_INTERVAL};
+use super::schedule::{
+    DEFAULT_BACKUP_INTERVAL, DEFAULT_RETAIN, DEFAULT_VERIFY_INTERVAL, checked_retain,
+};
 use super::walg::{
     default_base_interval, default_binary, default_data_dir, default_retain_full,
     parse_base_interval,
@@ -68,7 +70,7 @@ fn read_schedule() -> Result<ScheduleSettings, ConfigError> {
     Ok(ScheduleSettings {
         backup_interval: env::parse_or("BACKITO_BACKUP_INTERVAL", DEFAULT_BACKUP_INTERVAL)?,
         verify_interval: env::parse_or("BACKITO_VERIFY_INTERVAL", DEFAULT_VERIFY_INTERVAL)?,
-        retain: env::parse_or("BACKITO_RETAIN", DEFAULT_RETAIN)?,
+        retain: checked_retain(env::parse_or("BACKITO_RETAIN", DEFAULT_RETAIN)?)?,
     })
 }
 

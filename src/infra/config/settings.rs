@@ -55,6 +55,8 @@ impl Settings {
             (WalgMode::Enabled(_), Some(credentials)) => Some(credentials),
             (WalgMode::Disabled, _) => None,
         };
+        check_endpoint(&core.storage.endpoint)?;
+
         Ok(Self {
             database: core.database,
             storage: core.storage,
@@ -75,6 +77,48 @@ impl Settings {
             (WalgMode::Disabled, _) => None,
         }
     }
+}
+
+/// Characters RFC 3986 excludes from a URI, plus whitespace and controls.
+///
+/// The placeholder `init` writes carries `<` and `>`, which is how most people
+/// meet this.
+const EXCLUDED_FROM_A_URI: [char; 8] = ['<', '>', '"', '{', '}', '|', '\\', '^'];
+
+/// Rejects an endpoint the object store cannot build a request from.
+///
+/// `object_store` panics on an unparsable URI rather than returning an error, so
+/// a placeholder endpoint ends a command with a library stack trace instead of a
+/// sentence. Checked once, where both config sources meet.
+fn check_endpoint(endpoint: &str) -> Result<(), ConfigError> {
+    let unusable = |reason| ConfigError::UnusableEndpoint {
+        endpoint: endpoint.to_owned(),
+        reason,
+    };
+
+    let Some(host) = endpoint
+        .strip_prefix("https://")
+        .or_else(|| endpoint.strip_prefix("http://"))
+    else {
+        return Err(unusable("it has to start with https:// or http://"));
+    };
+
+    if host.is_empty() {
+        return Err(unusable("it names no host"));
+    }
+    if host
+        .chars()
+        .any(|glyph| glyph.is_whitespace() || glyph.is_control())
+    {
+        return Err(unusable("it contains a space or a control character"));
+    }
+    if host.contains(EXCLUDED_FROM_A_URI) {
+        return Err(unusable(
+            "it still contains placeholder brackets or another character a URL cannot carry",
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

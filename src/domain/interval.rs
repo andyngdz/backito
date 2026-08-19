@@ -85,6 +85,16 @@ impl Interval {
         ))
     }
 
+    /// This interval plus `other`, for accumulating elapsed time.
+    ///
+    /// Saturating, like `times`, so an absurd configuration clamps instead of
+    /// panicking in a debug build part way through a scheduling loop.
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self(Duration::from_secs(
+            self.0.as_secs().saturating_add(other.0.as_secs()),
+        ))
+    }
+
     /// True when this interval is zero, which every caller reads as "disabled"
     /// rather than "run continuously".
     pub const fn is_disabled(self) -> bool {
