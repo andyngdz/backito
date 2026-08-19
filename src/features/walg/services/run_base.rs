@@ -15,6 +15,7 @@ use crate::features::daemon::{BackupDue, due_from_age};
 use crate::features::progress::ProgressObserver;
 use crate::features::walg::services::backup_list::newest_base_age;
 use crate::infra::config::{WalgCredentials, WalgSettings};
+use crate::infra::docker::trailing_stderr;
 
 /// The wal-g subcommand that applies retention.
 const DELETE_COMMAND: &str = "delete";
@@ -122,6 +123,7 @@ async fn run_walg(
                 .unwrap_or(&crate::infra::config::DEFAULT_WALG_BINARY)
                 .to_string(),
             status: output.status.to_string(),
+            stderr: trailing_stderr(&output.stderr),
         });
     }
 

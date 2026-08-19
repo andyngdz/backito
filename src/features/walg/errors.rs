@@ -19,12 +19,18 @@ pub enum WalgError {
     },
 
     /// wal-g ran and exited non-zero.
-    #[error("wal-g {operation} exited with status {status}")]
+    ///
+    /// Carries the stderr tail because the scheduler retries this every fifteen
+    /// minutes: without the reason, a base backup that will never succeed logs
+    /// the same status line forever and says nothing about why.
+    #[error("wal-g {operation} exited with status {status}: {stderr}")]
     Exit {
         /// What was being attempted, e.g. `backup-push`.
         operation: String,
         /// Exit status reported by wal-g.
         status: String,
+        /// Tail of wal-g's stderr, where the cause is printed.
+        stderr: String,
     },
 
     /// The Postgres configuration fragment could not be written.

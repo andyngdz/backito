@@ -9,18 +9,14 @@ use super::scratch::{ScratchDatabase, leftover_exists};
 use crate::domain::{ArchiveName, compare_counts, rows_behind};
 use crate::features::progress::{ProgressObserver, Step};
 use crate::infra::config::Settings;
-use crate::infra::docker::{PostgresTarget, copy_into, restore_in_container, table_counts};
+use crate::infra::docker::{
+    ARCHIVE_IN_CONTAINER, PostgresTarget, copy_into, restore_in_container, table_counts,
+};
 use crate::infra::object_store::ObjectStore;
 
 /// Schema whose tables are compared. Only application data is checked: the
 /// system schemas a managed image owns differ by design after a restore.
 const COMPARED_SCHEMA: &str = "public";
-
-/// Path the archive is copied to inside the scratch container.
-const ARCHIVE_IN_CONTAINER: &str = "/tmp/backito-restore.dump";
-
-/// Parallel jobs `pg_restore` uses inside the scratch container.
-const RESTORE_JOBS: u8 = 4;
 
 /// Verifies `archive`, or the newest archive when `archive` is `None`.
 pub async fn run_verify(
@@ -43,7 +39,13 @@ pub async fn run_verify(
     let checksum = fetch_archive(store, &archive, &archive_path, &observer).await?;
 
     let scratch = start_scratch(settings, &observer).await?;
-    let restore_errors = load_archive(&scratch, &archive_path, &observer).await?;
+    let restore_errors = load_archive(
+        &scratch,
+        &archive_path,
+        settings.database.restore_jobs,
+        &observer,
+    )
+    .await?;
     let comparisons = compare(source_target, &scratch, &observer).await?;
 
     observer.step_started(Step::Cleanup);
@@ -75,12 +77,13 @@ async fn start_scratch(
 async fn load_archive(
     scratch: &ScratchDatabase,
     archive_path: &Path,
+    jobs: u8,
     observer: &Arc<dyn ProgressObserver>,
 ) -> Result<usize, VerifyError> {
     observer.step_started(Step::Restore);
     let target = scratch.target();
     copy_into(&target.container, archive_path, ARCHIVE_IN_CONTAINER).await?;
-    let stderr = restore_in_container(&target, ARCHIVE_IN_CONTAINER, RESTORE_JOBS).await?;
+    let stderr = restore_in_container(&target, ARCHIVE_IN_CONTAINER, jobs).await?;
     let errors = count_restore_errors(&stderr);
     observer.step_finished(Step::Restore, &format!("{errors} pg_restore errors"));
     Ok(errors)

@@ -8,12 +8,10 @@ use super::guard::{RestoreAuthorisation, ensure_writable, populated_tables};
 use crate::domain::ArchiveName;
 use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::docker::{
-    PostgresTarget, copy_into, require_running, restore_in_container, trailing_stderr,
+    ARCHIVE_IN_CONTAINER, PostgresTarget, copy_into, require_running, restore_in_container,
+    trailing_stderr,
 };
 use crate::infra::object_store::ObjectStore;
-
-/// Path the archive is copied to inside the target container.
-const ARCHIVE_IN_CONTAINER: &str = "/tmp/backito-restore.dump";
 
 /// What the caller decided about a restore, separate from where the archive
 /// lives and which container receives it.

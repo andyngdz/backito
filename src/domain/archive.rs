@@ -3,6 +3,10 @@
 
 use std::fmt;
 
+use jiff::Timestamp;
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+
 /// Filename stem shared by every archive this tool writes.
 const ARCHIVE_STEM: &str = "backup";
 
@@ -64,7 +68,7 @@ impl ArchiveName {
     pub fn parse_for(key: &str, label: &str) -> Option<Self> {
         let stamp = Self::belongs_to(key, label).then(|| stamp_of(key))??;
 
-        is_stamp(stamp).then(|| Self(key.to_owned()))
+        stamp_taken_at(stamp).map(|_| Self(key.to_owned()))
     }
 
     /// The key of the checksum sidecar that travels with this archive.
@@ -113,22 +117,40 @@ fn stamp_of(key: &str) -> Option<&str> {
     after_stem.strip_suffix(&extension)
 }
 
-/// True when `text` has the shape `ArchiveName::new` writes: `YYYYmmdd-HHMM`.
+/// Format the UTC stamp inside a key is written and read in.
 ///
-/// Shape only, not a calendar check. Reading it as a time is the scheduler's
-/// job; here it exists so a key that reached a path join cannot carry a
-/// directory separator or a `..` segment.
-fn is_stamp(text: &str) -> bool {
-    let Some((date, time)) = text.split_once('-') else {
-        return false;
-    };
+/// One definition, because the writer and the reader have to agree. When they
+/// drifted apart the daemon read every archive as undatable, which reads as
+/// "nothing has been backed up" and dumps the database on every pass.
+const STAMP_FORMAT: &str = "%Y%m%d-%H%M";
 
-    date.len() == 8
-        && time.len() == 4
-        && date
-            .bytes()
-            .chain(time.bytes())
-            .all(|byte| byte.is_ascii_digit())
+/// Renders `moment` as an archive key carries it.
+///
+/// Takes the instant rather than reading the clock, so the caller owns the
+/// time and this stays pure.
+pub fn stamp_at(moment: Timestamp) -> String {
+    moment.strftime(STAMP_FORMAT).to_string()
+}
+
+/// Reads a stamp back as the UTC instant it names, or `None` when it is not one.
+///
+/// Accepts only the canonical spelling, checked by rendering the parsed instant
+/// again and requiring the same text. `strptime` alone is looser than the format
+/// suggests: it reads `%H%M` out of `094` as 09:04, so a truncated key would
+/// pass. Insisting on a round trip needs no second set of rules to stay in step
+/// with `stamp_at`.
+///
+/// This is also what makes a typed key safe to join onto a path. A canonical
+/// stamp is digits and one hyphen, so nothing that parses here carries a
+/// directory separator or a `..` segment.
+pub fn stamp_taken_at(stamp: &str) -> Option<Timestamp> {
+    let moment = DateTime::strptime(STAMP_FORMAT, stamp)
+        .ok()?
+        .to_zoned(TimeZone::UTC)
+        .ok()
+        .map(|zoned| zoned.timestamp())?;
+
+    (stamp_at(moment) == stamp).then_some(moment)
 }
 
 impl fmt::Display for ArchiveName {

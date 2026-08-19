@@ -40,9 +40,17 @@ pub async fn prune_archives(
         store.delete(&key).await?;
         // The sidecar is best-effort: an archive whose checksum is already gone
         // still has to lose its dump, and failing the pass here would leave the
-        // bucket growing forever over one orphaned file.
+        // bucket growing forever over one orphaned file. Said out loud though,
+        // because nothing else ever will: `belongs_to` excludes sidecars, so one
+        // left behind here is never a candidate again and stays in the bucket.
         let checksum_key = ArchiveName::from_key(key.clone()).checksum_key();
-        let _ = store.delete(&checksum_key).await;
+        if let Err(failure) = store.delete(&checksum_key).await {
+            tracing::warn!(
+                key = %checksum_key,
+                %failure,
+                "could not delete a checksum sidecar, leaving it orphaned in the bucket"
+            );
+        }
         deleted.push(key);
     }
 

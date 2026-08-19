@@ -42,6 +42,13 @@ const DUMP_COMPRESSION: &str = "--compress=3";
 /// Custom format is required: it is the only one `pg_restore -j` can parallelise.
 const DUMP_FORMAT: &str = "--format=custom";
 
+/// Where an archive is staged inside a container before `pg_restore` reads it.
+///
+/// Shared by `verify` and `restore`, because it is the path `copy_into` writes
+/// to and `restore_in_container` reads from: two copies of it could drift into
+/// a restore that reads a file nothing wrote.
+pub const ARCHIVE_IN_CONTAINER: &str = "/tmp/backito-restore.dump";
+
 /// Ownership and ACL statements are dropped from both ends, so an archive
 /// restores into a database whose roles differ from the source's.
 const IDENTITY_FLAGS: [&str; 2] = ["--no-owner", "--no-acl"];

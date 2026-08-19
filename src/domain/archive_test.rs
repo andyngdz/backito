@@ -1,4 +1,4 @@
-use super::{ArchiveDigest, ArchiveName};
+use super::{ArchiveDigest, ArchiveName, stamp_at, stamp_taken_at};
 
 #[test]
 fn archive_key_carries_label_stamp_and_extension() {
@@ -159,6 +159,41 @@ fn a_key_whose_stamp_is_not_a_stamp_is_refused() {
         assert!(
             ArchiveName::parse_for(malformed, "app").is_none(),
             "{malformed} should be refused"
+        );
+    }
+}
+
+#[test]
+fn a_stamp_round_trips_through_the_key_it_is_written_into() {
+    // The writer and the reader used to be two constants in two files. If they
+    // drift, every archive reads as undatable and the daemon dumps the database
+    // on every pass, so the round trip is the thing worth pinning.
+    let moment = stamp_taken_at("20260803-0942").expect("a canonical stamp parses");
+
+    assert_eq!(stamp_at(moment), "20260803-0942");
+    assert_eq!(
+        ArchiveName::new("app", &stamp_at(moment)).stamp(),
+        Some("20260803-0942")
+    );
+}
+
+#[test]
+fn a_stamp_that_is_not_canonical_is_refused() {
+    // `strptime` alone reads `%H%M` out of `094` as 09:04, so a truncated key
+    // would otherwise parse and then 404 on download instead of being named as
+    // the malformed key it is.
+    for malformed in [
+        "20260803-094",
+        "20260803-09422",
+        "2026083-0942",
+        "20261303-0942",
+        "20260832-0942",
+        "20260803_0942",
+        "",
+    ] {
+        assert!(
+            stamp_taken_at(malformed).is_none(),
+            "{malformed} should not read as a stamp"
         );
     }
 }

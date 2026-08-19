@@ -8,14 +8,11 @@ use jiff::Timestamp;
 use super::super::DaemonError;
 use super::due::{BackupDue, NewestArchive, backup_due};
 use super::prune::prune_archives;
-use crate::domain::Interval;
+use crate::domain::{Interval, stamp_at};
 use crate::features::backup::run_backup;
 use crate::features::progress::ProgressObserver;
 use crate::infra::config::Settings;
 use crate::infra::object_store::{ObjectStore, ObjectStoreError};
-
-/// Format the archive stamp is written in.
-const STAMP_FORMAT: &str = "%Y%m%d-%H%M";
 
 /// Runs one pass: back up if due, prune what fell out of retention, verify when
 /// the verify cadence has come round.
@@ -29,14 +26,19 @@ pub async fn run_pass(
     working_dir: &Path,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<PassOutcome, DaemonError> {
+    // One reading of the clock for the whole pass. Two would let the archive be
+    // stamped in the minute after the one the due check reasoned about, so the
+    // answers to "is a backup due" and "what is it called" could disagree.
+    let started_at = Timestamp::now();
+
     let newest = newest_archive(store, &settings.database.label).await?;
-    let verdict = backup_due(&newest, settings.schedule.backup_interval, Timestamp::now());
+    let verdict = backup_due(&newest, settings.schedule.backup_interval, started_at);
 
     if let BackupDue::NotUntil { remaining } = verdict {
         return Ok(PassOutcome::Deferred { remaining });
     }
 
-    let stamp = Timestamp::now().strftime(STAMP_FORMAT).to_string();
+    let stamp = stamp_at(started_at);
     let outcome = run_backup(settings, store, working_dir, &stamp, Arc::clone(&observer)).await?;
 
     // Retention deletes on the strength of the archive that just landed, so it
