@@ -7,6 +7,9 @@
 
 use tokio::signal::unix::{SignalKind, signal};
 
+/// What both scheduling loops report when they are asked to stop.
+pub const STOPPING: &str = "stopping";
+
 /// Why a wait ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Woke {

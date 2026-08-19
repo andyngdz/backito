@@ -6,7 +6,7 @@ use std::sync::Arc;
 use super::super::{VerifyError, VerifyOutcome};
 use super::fetch_archive::fetch_archive;
 use super::scratch::{ScratchDatabase, leftover_exists};
-use crate::domain::{ArchiveName, compare_counts, rows_behind};
+use crate::domain::{ArchiveChoice, compare_counts, rows_behind};
 use crate::features::progress::{ProgressObserver, Step};
 use crate::infra::config::Settings;
 use crate::infra::docker::{
@@ -24,7 +24,7 @@ pub async fn run_verify(
     store: &ObjectStore,
     source_target: &PostgresTarget,
     working_dir: &Path,
-    archive: Option<ArchiveName>,
+    archive: ArchiveChoice,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<VerifyOutcome, VerifyError> {
     if leftover_exists(&settings.database.label).await? {
@@ -32,8 +32,8 @@ pub async fn run_verify(
     }
 
     let archive = match archive {
-        Some(named) => named,
-        None => store.latest_archive(&settings.database.label).await?,
+        ArchiveChoice::Named(named) => named,
+        ArchiveChoice::Newest => store.latest_archive(&settings.database.label).await?,
     };
     let archive_path = working_dir.join(archive.as_str());
     let checksum = fetch_archive(store, &archive, &archive_path, &observer).await?;

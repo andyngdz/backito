@@ -9,4 +9,4 @@ mod upload;
 
 pub use errors::ObjectStoreError;
 pub use operation::StoreOperation;
-pub use store::{ObjectStore, StoredArchive};
+pub use store::ObjectStore;

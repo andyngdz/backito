@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::domain::ArchiveKeyError;
 use crate::features::backup::BackupError;
 use crate::features::daemon::DaemonError;
 use crate::features::init::InitError;
@@ -91,17 +92,8 @@ pub enum CliError {
     },
 
     /// `--archive` named a key this tool did not write for the configured label.
-    ///
-    /// Checked before anything downloads, because the key becomes a local
-    /// filename: one carrying a path segment would write outside the scratch
-    /// directory.
-    #[error("--archive {key} is not an archive backito wrote for label {label}")]
-    UnknownArchive {
-        /// The key as typed.
-        key: String,
-        /// Label the config pins.
-        label: String,
-    },
+    #[error("{0}")]
+    ArchiveKey(#[from] ArchiveKeyError),
 }
 
 impl CliError {
@@ -144,7 +136,7 @@ impl CliError {
                 "`init` writes backito.toml into the current directory; \
                  cd there first, or move the file afterwards",
             ),
-            Self::UnknownArchive { .. } => Some(
+            Self::ArchiveKey(_) => Some(
                 "run `backito list` to see the keys that exist, \
                  or drop --archive to use the newest",
             ),

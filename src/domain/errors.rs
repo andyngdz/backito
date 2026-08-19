@@ -23,3 +23,19 @@ pub enum IntervalError {
         text: String,
     },
 }
+
+/// Why an archive key supplied by a person could not be used.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ArchiveKeyError {
+    /// The key is not one this tool wrote for the configured label.
+    ///
+    /// Raised before anything downloads, because the key becomes a local
+    /// filename: one carrying a path segment would write outside the workspace.
+    #[error("--archive {key} is not an archive backito wrote for label {label}")]
+    NotOurs {
+        /// The key as typed.
+        key: String,
+        /// Label the config pins.
+        label: String,
+    },
+}

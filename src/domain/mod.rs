@@ -6,7 +6,9 @@ mod errors;
 mod interval;
 mod table_count;
 
-pub use archive::{ArchiveDigest, ArchiveName, stamp_at, stamp_taken_at};
-pub use errors::IntervalError;
+pub use archive::{
+    ArchiveChoice, ArchiveDigest, ArchiveName, StoredArchive, stamp_at, stamp_taken_at,
+};
+pub use errors::{ArchiveKeyError, IntervalError};
 pub use interval::Interval;
 pub use table_count::{CountVerdict, TableComparison, TableCounts, compare_counts, rows_behind};

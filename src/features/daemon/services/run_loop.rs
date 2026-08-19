@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use super::super::DaemonError;
 use super::run_daemon::{PassOutcome, run_pass};
-use crate::domain::Interval;
+use crate::domain::{ArchiveChoice, Interval};
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
 use crate::features::progress::{ProgressObserver, human_bytes};
 use crate::features::verify::run_verify;
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
-use crate::infra::shutdown::{Woke, sleep_unless_stopped, unless_stopped};
+use crate::infra::shutdown::{STOPPING, Woke, sleep_unless_stopped, unless_stopped};
 use crate::infra::workspace::Workspace;
 
 /// How long to wait before retrying after a failed pass.
@@ -102,7 +102,7 @@ async fn one_cycle(
 
 /// Reports the stop and ends the loop.
 fn stop(observer: &Arc<dyn ProgressObserver>) -> Result<(), DaemonError> {
-    observer.info("stopping");
+    observer.info(STOPPING);
     Ok(())
 }
 
@@ -179,7 +179,7 @@ async fn verify_once(
         store,
         &target,
         working_dir,
-        None,
+        ArchiveChoice::Newest,
         observer.clone(),
     )
     .await

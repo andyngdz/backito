@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use super::ArchiveKeyError;
+
 use jiff::Timestamp;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
@@ -157,6 +159,47 @@ impl fmt::Display for ArchiveName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }
+}
+
+/// Which archive a command was told to work on.
+///
+/// An enum rather than `Option<ArchiveName>` because the absent case is a real
+/// instruction, not a missing value: it means "whichever is newest", which is
+/// resolved against the bucket rather than defaulted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArchiveChoice {
+    /// Whichever archive for this label is newest.
+    Newest,
+    /// This archive, named by a person and already checked.
+    Named(ArchiveName),
+}
+
+impl ArchiveChoice {
+    /// Reads a `--archive` value, refusing a key this tool did not write.
+    ///
+    /// Lives here so `verify` and `restore` get the same check without either
+    /// owning it, and so the check sits next to the naming rules it enforces.
+    pub fn parse(key: Option<String>, label: &str) -> Result<Self, ArchiveKeyError> {
+        let Some(key) = key else {
+            return Ok(Self::Newest);
+        };
+
+        ArchiveName::parse_for(&key, label)
+            .map(Self::Named)
+            .ok_or(ArchiveKeyError::NotOurs {
+                key,
+                label: label.to_owned(),
+            })
+    }
+}
+
+/// One archive as a bucket holds it: what it is called, and how big it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredArchive {
+    /// Key the archive is stored under.
+    pub name: ArchiveName,
+    /// Size the store reports for it.
+    pub bytes: u64,
 }
 
 /// A hex-encoded SHA-256 digest of an archive.

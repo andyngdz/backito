@@ -13,7 +13,7 @@ use object_store::ObjectStore as _;
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 
 use super::{ObjectStoreError, StoreOperation};
-use crate::domain::ArchiveName;
+use crate::domain::{ArchiveName, StoredArchive};
 use crate::infra::config::{StorageCredentials, StorageSettings};
 
 /// One bucket, addressed with path-style URLs.
@@ -119,13 +119,4 @@ impl ObjectStore {
                 source: Box::new(source),
             })
     }
-}
-
-/// One archive as the bucket holds it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredArchive {
-    /// Key the archive is stored under.
-    pub name: ArchiveName,
-    /// Size the store reports for it.
-    pub bytes: u64,
 }

@@ -9,8 +9,9 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::DockerError;
-use super::container::{DOCKER_BIN, DockerSubcommand, run_docker, trailing_stderr};
+use super::container::{DOCKER_BIN, DockerSubcommand, run_docker};
 use super::count_query::{counts_sql, list_tables_sql, parse_counts, parse_identifiers};
+use super::stderr::trailing_stderr;
 use crate::domain::TableCounts;
 
 /// The Postgres command-line tools this adapter drives.

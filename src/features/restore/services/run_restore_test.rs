@@ -1,4 +1,5 @@
 use super::{RestoreRequest, run_restore};
+use crate::domain::ArchiveChoice;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::features::restore::RestoreAuthorisation;
 use crate::infra::config::{StorageCredentials, StorageSettings};
@@ -41,7 +42,7 @@ async fn the_target_is_checked_before_anything_is_downloaded() {
         &missing_target(),
         workspace.path(),
         RestoreRequest {
-            archive: None,
+            archive: ArchiveChoice::Newest,
             authorisation: RestoreAuthorisation::Forced,
             jobs: 4,
         },

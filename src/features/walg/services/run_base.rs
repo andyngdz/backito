@@ -16,7 +16,7 @@ use crate::features::progress::ProgressObserver;
 use crate::features::walg::services::backup_list::newest_base_age;
 use crate::infra::config::{WalgCredentials, WalgSettings};
 use crate::infra::docker::trailing_stderr;
-use crate::infra::shutdown::{Woke, sleep_unless_stopped};
+use crate::infra::shutdown::{STOPPING, Woke, sleep_unless_stopped};
 
 /// The wal-g subcommand that applies retention.
 const DELETE_COMMAND: &str = "delete";
@@ -60,7 +60,7 @@ pub async fn run_base_loop(
         };
 
         if sleep_unless_stopped(wait_for.as_duration()).await == Woke::Stopping {
-            observer.info("stopping");
+            observer.info(STOPPING);
             return Ok(());
         }
     }

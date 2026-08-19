@@ -8,6 +8,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::DockerError;
+use super::stderr::trailing_stderr;
 
 /// The `docker` subcommands this tool drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,9 +58,6 @@ const READY_ATTEMPTS: u32 = 60;
 
 /// Delay between readiness probes.
 const READY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// Bytes of stderr kept in an error message.
-const STDERR_KEEP_BYTES: usize = 2000;
 
 /// Runs `docker` with `args`, returning stdout on success.
 pub async fn run_docker(operation: &str, args: &[&str]) -> Result<Vec<u8>, DockerError> {
@@ -232,23 +230,6 @@ pub async fn remove(container: &str) -> Result<(), DockerError> {
         }
         Err(other) => Err(other),
     }
-}
-
-/// Keeps the tail of stderr, which is where the useful line is when a tool
-/// prints a long preamble first. Cuts on a char boundary so the message stays
-/// valid UTF-8.
-pub fn trailing_stderr(stderr: &[u8]) -> String {
-    let text = String::from_utf8_lossy(stderr);
-    let trimmed = text.trim();
-    if trimmed.len() <= STDERR_KEEP_BYTES {
-        return trimmed.to_owned();
-    }
-
-    let cut_from = trimmed.len() - STDERR_KEEP_BYTES;
-    let boundary = (cut_from..trimmed.len())
-        .find(|index| trimmed.is_char_boundary(*index))
-        .unwrap_or(trimmed.len());
-    trimmed[boundary..].to_owned()
 }
 
 #[cfg(test)]
