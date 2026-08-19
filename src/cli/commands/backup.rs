@@ -9,6 +9,7 @@ use crate::features::backup::{BackupError, keep_archive, run_backup};
 use crate::features::progress::ProgressObserver;
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
+use crate::infra::workspace::Workspace;
 
 /// What happens to the archive on disk once it is uploaded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,10 +39,8 @@ pub async fn run(
     let store =
         ObjectStore::new(&settings.storage, &settings.credentials).map_err(BackupError::Storage)?;
 
-    let workspace = tempfile::Builder::new()
-        .prefix("backito-")
-        .tempdir()
-        .map_err(|source| CliError::WorkingDirectory { source })?;
+    let workspace =
+        Workspace::acquire("backito-").map_err(|source| CliError::WorkingDirectory { source })?;
 
     let stamp = jiff::Timestamp::now().strftime("%Y%m%d-%H%M").to_string();
     let outcome = run_backup(

@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use super::super::DaemonError;
 use super::run_daemon::{PassOutcome, run_pass};
-use super::workspace::{pass_workspace, sweep_stale};
 use crate::domain::Interval;
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
@@ -14,6 +13,7 @@ use crate::features::progress::ProgressObserver;
 use crate::features::verify::run_verify;
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
+use crate::infra::workspace::Workspace;
 
 /// How long to wait before retrying after a failed pass.
 ///
@@ -31,21 +31,16 @@ pub async fn run_loop(
     store: &ObjectStore,
     observer: Arc<dyn ProgressObserver>,
 ) -> Result<(), DaemonError> {
-    let swept = sweep_stale(&std::env::temp_dir());
-    if swept > 0 {
-        observer.info(&format!(
-            "removed {swept} stale workspace dirs from an earlier run"
-        ));
-    }
-
     let mut since_verify = Interval::from_secs(0);
 
     loop {
         // A fresh workspace per pass, so the pass's multi-GB dump is freed the
-        // moment the pass is done instead of surviving the whole daemon life. A
-        // workspace that cannot even be created is a full disk, so treat it like
-        // any other failed pass and retry rather than exit.
-        let workspace = match pass_workspace() {
+        // moment the pass is done instead of surviving the whole daemon life.
+        // Acquiring also reclaims any dead workspace a killed earlier run left,
+        // so a crash-restart cleans up before it backs up. A workspace that
+        // cannot even be created is a full disk, so treat it like any other
+        // failed pass and retry rather than exit.
+        let workspace = match Workspace::acquire("backito-daemon-") {
             Ok(dir) => dir,
             Err(failure) => {
                 observer.warn(&format!(

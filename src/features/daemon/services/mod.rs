@@ -5,7 +5,6 @@ mod freshness;
 mod prune;
 mod run_daemon;
 mod run_loop;
-mod workspace;
 
 pub use due::{ArchiveAge, BackupDue, due_from_age};
 pub use freshness::{BackupFreshness, backup_freshness};

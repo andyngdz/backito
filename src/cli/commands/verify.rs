@@ -11,6 +11,7 @@ use crate::features::progress::ProgressObserver;
 use crate::features::verify::{VerifyError, run_verify, summarise};
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
+use crate::infra::workspace::Workspace;
 
 /// Verifies an archive and returns what was found.
 pub async fn run(
@@ -21,9 +22,7 @@ pub async fn run(
     let store =
         ObjectStore::new(&settings.storage, &settings.credentials).map_err(VerifyError::Storage)?;
 
-    let workspace = tempfile::Builder::new()
-        .prefix("backito-verify-")
-        .tempdir()
+    let workspace = Workspace::acquire("backito-verify-")
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
     let container = resolve(&settings.database.container).await?;
