@@ -108,7 +108,7 @@ async fn compare(
 /// Reported for transparency only. Restoring into a managed Postgres image
 /// always produces errors for system objects the image already owns, so this
 /// number never decides pass or fail.
-pub fn count_restore_errors(stderr: &str) -> usize {
+pub(super) fn count_restore_errors(stderr: &str) -> usize {
     stderr
         .lines()
         .filter(|line| line.contains("error:") || line.contains("ERROR:"))

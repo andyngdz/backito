@@ -66,7 +66,7 @@ pub async fn run(
             let directory =
                 std::env::current_dir().map_err(|source| CliError::WorkingDirectory { source })?;
             let kept = keep_archive(&outcome.local_path, &directory, outcome.archive.as_str())?;
-            observer.warn(&format!("kept local copy at {}", kept.display()));
+            observer.info(&format!("kept local copy at {}", kept.display()));
         }
         LocalCopy::Discard => {}
     }

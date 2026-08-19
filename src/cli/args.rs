@@ -184,3 +184,7 @@ pub enum WalgCommand {
         args: Vec<String>,
     },
 }
+
+#[cfg(test)]
+#[path = "args_test.rs"]
+mod args_test;

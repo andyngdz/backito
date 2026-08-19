@@ -1,4 +1,6 @@
 use super::run;
+use crate::cli::CliError;
+use crate::features::daemon::DaemonError;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::infra::config::WalgMode;
 use crate::infra::config::{
@@ -42,6 +44,12 @@ async fn an_unreachable_bucket_stops_the_loop_before_it_starts() {
 
     // Failing at startup is the point: once the loop is running it swallows a
     // failed pass and retries, which is right for a transient outage and wrong
-    // for a configuration that can never work.
-    assert!(!failure.to_string().is_empty());
+    // for a configuration that can never work. It has to fail as a storage
+    // failure specifically, so the hint sends the operator at the bucket rather
+    // than at the database or the config file.
+    assert!(
+        matches!(failure, CliError::Daemon(DaemonError::Storage(_))),
+        "expected a storage failure, got {failure:?}"
+    );
+    assert!(failure.hint().is_some_and(|hint| hint.contains("bucket")));
 }

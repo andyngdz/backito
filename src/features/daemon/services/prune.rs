@@ -68,7 +68,7 @@ pub async fn prune_archives(
 /// shared with another label, or holding objects this tool did not write, loses
 /// nothing. Within one label the stamp sorts chronologically, so string order is
 /// age order and no metadata request is needed.
-pub fn archives_to_drop(stored: &[String], label: &str, retain: u32) -> Vec<String> {
+pub(super) fn archives_to_drop(stored: &[String], label: &str, retain: u32) -> Vec<String> {
     let mut archives: Vec<&String> = stored
         .iter()
         .filter(|key| ArchiveName::belongs_to(key, label))

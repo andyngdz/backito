@@ -77,7 +77,7 @@ impl Drop for ScratchDatabase {
 }
 
 /// Builds the scratch container name for `label`.
-pub fn scratch_name(label: &str) -> String {
+pub(super) fn scratch_name(label: &str) -> String {
     format!("{SCRATCH_PREFIX}{label}")
 }
 

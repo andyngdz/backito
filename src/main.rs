@@ -17,14 +17,14 @@ async fn main() -> ExitCode {
             for line in report.lines {
                 println!("{line}");
             }
-            ExitCode::from(report.status.code() as u8)
+            ExitCode::from(report.status.code())
         }
         Err(cli_err) => {
             eprintln!("error: {cli_err}");
             if let Some(hint) = cli_err.hint() {
                 eprintln!("hint:  {hint}");
             }
-            ExitCode::from(cli::ExitStatus::Failure.code() as u8)
+            ExitCode::from(cli::ExitStatus::Failure.code())
         }
     }
 }

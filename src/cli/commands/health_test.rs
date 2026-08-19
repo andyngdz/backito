@@ -1,4 +1,6 @@
 use super::run;
+use crate::cli::CliError;
+use crate::features::daemon::DaemonError;
 use crate::features::progress::{ProgressObserver, SilentObserver};
 use crate::infra::config::WalgMode;
 use crate::infra::config::{
@@ -42,6 +44,11 @@ async fn an_unreachable_bucket_fails_rather_than_reporting_healthy() {
 
     // The dangerous answer here is a green healthcheck: a probe that cannot see
     // the bucket has not established that a backup exists, and saying "healthy"
-    // would hide exactly the outage it is there to catch.
-    assert!(!failure.to_string().is_empty());
+    // would hide exactly the outage it is there to catch. Naming the class
+    // matters too, because an empty-string assertion passes for a config parse
+    // error just as happily.
+    assert!(
+        matches!(failure, CliError::Daemon(DaemonError::Storage(_))),
+        "expected a storage failure, got {failure:?}"
+    );
 }

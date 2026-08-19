@@ -63,7 +63,7 @@ async fn compare_to_sidecar(
 }
 
 /// One-line summary of a checksum outcome, for the step line.
-pub fn describe(outcome: &ChecksumOutcome) -> String {
+pub(super) fn describe(outcome: &ChecksumOutcome) -> String {
     match outcome {
         ChecksumOutcome::Matched => "matches stored checksum".to_owned(),
         ChecksumOutcome::Mismatched { expected, actual } => {

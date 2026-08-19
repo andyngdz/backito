@@ -56,7 +56,7 @@ async fn inspect_archive(inspect_image: &str, archive_path: &Path) -> Result<usi
 }
 
 /// Reads a local file's size.
-pub fn file_size(path: &Path) -> Result<u64, BackupError> {
+pub(super) fn file_size(path: &Path) -> Result<u64, BackupError> {
     std::fs::metadata(path)
         .map(|metadata| metadata.len())
         .map_err(|source| BackupError::LocalFile {

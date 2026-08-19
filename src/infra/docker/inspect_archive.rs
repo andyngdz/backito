@@ -84,7 +84,7 @@ async fn inspect(archive: &Path) -> Result<usize, DockerError> {
 }
 
 /// Counts the `TABLE DATA` lines in a `pg_restore --list` listing.
-pub fn count_entries(listing: &str) -> usize {
+pub(super) fn count_entries(listing: &str) -> usize {
     listing
         .lines()
         .filter(|line| line.contains("TABLE DATA"))

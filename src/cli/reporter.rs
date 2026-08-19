@@ -81,7 +81,7 @@ impl ProgressObserver for TerminalReporter {
         let line = if detail.is_empty() {
             format!("{DONE_MARK} {}", step.label())
         } else {
-            format!("{DONE_MARK} {} — {detail}", step.label())
+            format!("{DONE_MARK} {} - {detail}", step.label())
         };
 
         if let Ok(current) = self.bar.lock() {

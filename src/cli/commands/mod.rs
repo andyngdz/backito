@@ -83,7 +83,10 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
     let choice = SourceChoice::from_cli(&cli);
 
     match cli.command {
-        Command::Init { force } => init::run(force.into()),
+        Command::Init { force } => {
+            refuse_config_flags(&cli)?;
+            init::run(force.into())
+        }
 
         Command::Backup { keep } => {
             let context = load(&choice)?;
@@ -136,6 +139,28 @@ fn load(choice: &SourceChoice) -> Result<Context, CliError> {
         settings: choice.settings()?,
         observer: Arc::new(TerminalReporter::new()),
     })
+}
+
+/// Refuses the config-source flags on `init`, which cannot act on either.
+///
+/// `init` runs before there is a config to point at, and writes into the working
+/// directory. Both flags parse because they are global, so without this they are
+/// accepted and dropped.
+fn refuse_config_flags(cli: &Cli) -> Result<(), CliError> {
+    if cli.config.is_some() {
+        return Err(CliError::FlagNotUsedHere {
+            command: "init",
+            flag: "--config",
+        });
+    }
+    if cli.env {
+        return Err(CliError::FlagNotUsedHere {
+            command: "init",
+            flag: "--env",
+        });
+    }
+
+    Ok(())
 }
 
 /// Reads a `--archive` value, or `None` to take the newest.
