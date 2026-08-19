@@ -13,7 +13,7 @@ compares row counts table by table against the live database.
 cargo install --path .
 ```
 
-Needs `docker` on PATH. Postgres client tools are not needed on the host —
+Needs `docker` on PATH. Postgres client tools are not needed on the host:
 `pg_dump` and `pg_restore` run inside the container, so their version always
 matches the server's.
 
@@ -53,7 +53,7 @@ region   = "auto"
 [schedule]                     # only `daemon` and `health` read this
 backup_interval = "24h"
 verify_interval = "7d"         # "0s" disables verification
-retain          = 7            # archives kept per label
+retain          = 30           # archives kept per label; only `daemon` prunes
 ```
 
 Intervals are written as a number and a unit: `30s`, `15m`, `24h`, `7d`. Every
@@ -151,6 +151,7 @@ anything that reads settings.
 backito init              # write backito.toml and gitignore it
 backito backup            # dump, check, hash, upload
 backito verify            # prove the newest archive restores
+backito list              # what is in the bucket, oldest first
 backito restore --force   # load an archive into a real database
 backito daemon            # back up on a schedule until stopped
 backito health            # is there a recent enough backup? exit code says
@@ -166,13 +167,54 @@ KEY=$(backito backup)
 Progress goes to stderr:
 
 ```
-✓ Checking database connection — app-db
-✓ Checking storage connection — app-database-backups (7 objects)
-✓ Backing up database — 882.34 MiB
-✓ Inspecting archive — 45 tables with data
-✓ Computing checksum — 4511776496382…
+✓ Checking database connection - app-db
+✓ Checking storage connection - app-database-backups (7 objects)
+✓ Backing up database - 882.34 MiB
+✓ Inspecting archive - 45 tables with data
+✓ Computing checksum - 4511776496382…
 ⠹ Uploading archive [========>               ] 331 MiB/882 MiB (18 MiB/s)
 ```
+
+### Flags
+
+Three are global and work on every command: `--config <FILE>` picks a config
+file, `--env` reads the settings from `BACKITO_*` instead, and `--verbose`
+prints internal logs to stderr. Reach for `--verbose` first when a scheduled
+run failed and the message alone does not say why.
+
+| Command | Flag | What it does |
+|---|---|---|
+| `backup` | `--keep` | Keep the local archive after upload instead of deleting it with the workspace. |
+| `verify` | `--archive <KEY>` | Verify this archive instead of the newest. |
+| `restore` | `--archive <KEY>` | Restore this archive instead of the newest. |
+| `restore` | `--into-container <NAME>` | Restore into this container instead of the configured database. Takes a container name even when the config pins a service. |
+| `restore` | `--force` | Proceed even though the target already holds data. |
+| `list` | `--keys-only` | Print bare keys, for piping. |
+| `init` | `--force` | Replace an existing backito.toml instead of refusing. |
+
+A key from `list` goes straight into `--archive`. Anything else is refused
+before a byte moves, because the key becomes a local filename:
+
+```bash
+$ backito verify --archive ../../etc/passwd.dump
+error: --archive ../../etc/passwd.dump is not an archive backito wrote for label app
+hint:  run `backito list` to see the keys that exist, or drop --archive to use the newest
+```
+
+## Retention
+
+`retain` under `[schedule]` says how many archives to keep per label. It counts
+archives, not days, so the default of 30 is a month only at the default daily
+cadence.
+
+**Only `daemon` prunes.** A one-shot `backito backup` never deletes anything, so
+the cron recipe below grows the bucket until something else trims it. Run
+`daemon` if you want retention applied, or set a lifecycle rule on the bucket.
+
+Retention runs after a backup lands, and only once that archive is known whole:
+if the stored size does not match what was sent, the pass keeps every older
+archive and says so. `retain = 0` is refused at load rather than obeyed, since
+obeying it would delete the archive the pass just wrote along with the rest.
 
 ## What `verify` actually checks
 
@@ -188,13 +230,13 @@ Three things that trip people up, encoded here so they do not have to be
 rediscovered:
 
 **`pg_restore` errors are not failures.** Restoring into a managed Postgres
-image reports dozens of errors for system objects the image already owns —
+image reports dozens of errors for system objects the image already owns:
 event triggers, the `auth` schema, extensions. The count is shown for
 transparency and never decides the result.
 
 **A restored copy behind the source is drift, not loss.** The source keeps
 taking writes after the dump is taken. `backito` names that as drift. A restored
-copy *ahead* of the source, or a table missing from either side, fails —
+copy *ahead* of the source, or a table missing from either side, fails;
 neither can be explained by drift.
 
 **A missing checksum is a failure.** An archive whose bytes cannot be checked
@@ -202,6 +244,9 @@ has been restored, not verified.
 
 Exit codes: `0` pass, `1` the command could not run, `2` verification ran and
 found a mismatch. A scheduled check can tell those apart.
+
+`health` uses the same three codes for its own question, and reads `1` as its
+own kind of bad news: no recent enough backup. See below.
 
 ## Point-in-time recovery with wal-g
 
@@ -304,6 +349,11 @@ On start it asks the bucket when the last backup landed and waits out whatever
 is left of the interval. Restarting the container does not take another backup,
 so redeploying five times in an afternoon still leaves one archive for the day.
 
+It stops on SIGTERM, which is what `docker stop` and a systemd unit send. A stop
+during a pass abandons that pass rather than finishing it: the dump is deleted,
+the scratch container is removed, and the `pg_dump` running inside the source
+database goes with the process instead of outliving it.
+
 ### As a healthcheck: `backito health`
 
 ```yaml
@@ -315,6 +365,11 @@ healthcheck:
 Exit 0 while the newest archive is younger than two `backup_interval` periods,
 exit 1 once it is older, or when there is no readable archive at all. One missed
 backup is a retry; two is a pattern.
+
+The `1` here is the healthcheck's own verdict, not the "could not run" of the
+other commands. A healthcheck only gets to say pass or fail, so both readings
+share the code; when the difference matters, run it with `--verbose` and read
+the message.
 
 It reads the bucket rather than a local marker file, which is what makes it
 survive the container: a restarted or rebuilt process reports the same answer as
@@ -333,7 +388,7 @@ PATH=/home/you/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 ```
 
 No quiet flag is needed: the progress display renders nothing when stderr is not
-a terminal, so a scheduled run is silent unless something went wrong — and then
+a terminal, so a scheduled run is silent unless something went wrong, and then
 cron mails you the warning or error. A silent run means a clean one.
 
 Three things cron gets wrong by default:
@@ -345,6 +400,9 @@ Three things cron gets wrong by default:
 - **Overlapping runs collide.** The scratch and inspect containers have fixed
   names, and starting one removes a container of the same name. `flock` keeps a
   long verify from being cut short by the next backup.
+- **Nothing prunes.** `retain` applies to `daemon` only, so a crontab like this
+  one grows the bucket forever. Trim it with a bucket lifecycle rule, or run
+  `daemon` instead of cron.
 
 ## License
 
