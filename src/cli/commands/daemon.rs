@@ -6,7 +6,7 @@ use super::super::CliError;
 use super::super::dto::CommandReport;
 use crate::features::daemon::{DaemonError, run_loop};
 use crate::features::progress::ProgressObserver;
-use crate::infra::config::{ScheduleSettings, Settings};
+use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
 
 /// Runs the scheduling loop.
@@ -27,18 +27,13 @@ pub async fn run(
     // rather than saying the configuration is broken.
     store.list_keys().await.map_err(DaemonError::Storage)?;
 
-    let workspace = tempfile::Builder::new()
-        .prefix("backito-daemon-")
-        .tempdir()
-        .map_err(|source| CliError::WorkingDirectory { source })?;
-
-    let schedule: &ScheduleSettings = &settings.schedule;
+    let schedule = &settings.schedule;
     observer.info(&format!(
         "backup every {}, verify every {}, retaining {} archives",
         schedule.backup_interval, schedule.verify_interval, schedule.retain,
     ));
 
-    run_loop(settings, &store, workspace.path(), observer).await?;
+    run_loop(settings, &store, observer).await?;
 
     Ok(CommandReport::line("daemon stopped"))
 }

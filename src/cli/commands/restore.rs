@@ -11,6 +11,7 @@ use crate::features::progress::ProgressObserver;
 use crate::features::restore::{RestoreAuthorisation, RestoreError, RestoreRequest, run_restore};
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
+use crate::infra::workspace::Workspace;
 
 /// Restores an archive into the configured database, or into `into_container`.
 pub async fn run(
@@ -31,9 +32,7 @@ pub async fn run(
     };
     let target = target_for(&settings.database, container);
 
-    let workspace = tempfile::Builder::new()
-        .prefix("backito-restore-")
-        .tempdir()
+    let workspace = Workspace::acquire("backito-restore-")
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
     let request = RestoreRequest {
