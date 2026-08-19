@@ -13,6 +13,7 @@ use crate::features::progress::{ProgressObserver, human_bytes};
 use crate::features::verify::run_verify;
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
+use crate::infra::shutdown::{Woke, sleep_unless_stopped, unless_stopped};
 use crate::infra::workspace::Workspace;
 
 /// How long to wait before retrying after a failed pass.
@@ -21,11 +22,20 @@ use crate::infra::workspace::Workspace;
 /// cadence, long enough that a persistent one does not spin.
 const RETRY_AFTER: Interval = Interval::from_secs(15 * 60);
 
+/// What the loop should do once a cycle is over.
+enum Cycle {
+    /// Wait this long, then go round again.
+    Again(Interval),
+    /// A stop was requested part way through.
+    Stop,
+}
+
 /// Schedules backups until the process is stopped.
 ///
 /// A failed pass is logged and retried; it does not end the loop. A scheduler
 /// that exits on its first failure stops backing up entirely at the moment
-/// something goes wrong, which is the moment backups matter most.
+/// something goes wrong, which is the moment backups matter most. A stop
+/// requested by the operator is the one thing that does end it.
 pub async fn run_loop(
     settings: &Settings,
     store: &ObjectStore,
@@ -34,37 +44,66 @@ pub async fn run_loop(
     let mut since_verify = Interval::from_secs(0);
 
     loop {
-        // A fresh workspace per pass, so the pass's multi-GB dump is freed the
-        // moment the pass is done instead of surviving the whole daemon life.
-        // Acquiring also reclaims any dead workspace a killed earlier run left,
-        // so a crash-restart cleans up before it backs up. A workspace that
-        // cannot even be created is a full disk, so treat it like any other
-        // failed pass and retry rather than exit.
-        let workspace = match Workspace::acquire("backito-daemon-") {
-            Ok(dir) => dir,
-            Err(failure) => {
-                observer.warn(&format!(
-                    "could not create a workspace, retrying in {RETRY_AFTER}: {failure}"
-                ));
-                tokio::time::sleep(RETRY_AFTER.as_duration()).await;
-                continue;
-            }
+        let waiting = match one_cycle(settings, store, &observer, &mut since_verify).await {
+            Cycle::Stop => return stop(&observer),
+            Cycle::Again(wait_for) => wait_for,
         };
-        let working_dir = workspace.path();
 
-        let wait_for = backup_pass(settings, store, working_dir, &observer).await;
-
-        since_verify = Interval::from_secs(since_verify.as_secs() + wait_for.as_secs());
-        if verify_is_due(settings.schedule.verify_interval, since_verify) {
-            verify_once(settings, store, working_dir, Arc::clone(&observer)).await;
-            since_verify = Interval::from_secs(0);
+        if sleep_unless_stopped(waiting.as_duration()).await == Woke::Stopping {
+            return stop(&observer);
         }
-
-        // Free this pass's dump before sleeping the interval; the sleep can be a
-        // full day and the guard would otherwise hold the dump on disk all day.
-        drop(workspace);
-        tokio::time::sleep(wait_for.as_duration()).await;
     }
+}
+
+/// Runs one backup pass and, when its cadence has come round, one verification.
+///
+/// The workspace is scoped to this function so the pass's multi-GB dump is freed
+/// before the caller sleeps the interval, which can be a full day.
+async fn one_cycle(
+    settings: &Settings,
+    store: &ObjectStore,
+    observer: &Arc<dyn ProgressObserver>,
+    since_verify: &mut Interval,
+) -> Cycle {
+    // A workspace that cannot even be created is a full disk, so treat it like
+    // any other failed pass and retry rather than exit. Acquiring also reclaims
+    // any dead workspace a killed earlier run left behind.
+    let workspace = match Workspace::acquire("backito-daemon-") {
+        Ok(dir) => dir,
+        Err(failure) => {
+            observer.warn(&format!(
+                "could not create a workspace, retrying in {RETRY_AFTER}: {failure}"
+            ));
+            return Cycle::Again(RETRY_AFTER);
+        }
+    };
+    let working_dir = workspace.path();
+
+    // A stop during the pass drops the unfinished work rather than waiting it
+    // out: a dump can run for an hour, and an orchestrator that asked to stop
+    // will send SIGKILL long before that. Dropping is what runs the guards,
+    // which is what removes the scratch container and the dump on disk.
+    let Some(wait_for) = unless_stopped(backup_pass(settings, store, working_dir, observer)).await
+    else {
+        return Cycle::Stop;
+    };
+
+    *since_verify = since_verify.saturating_add(wait_for);
+    if verify_is_due(settings.schedule.verify_interval, *since_verify) {
+        let verify = verify_once(settings, store, working_dir, Arc::clone(observer));
+        if unless_stopped(verify).await.is_none() {
+            return Cycle::Stop;
+        }
+        *since_verify = Interval::from_secs(0);
+    }
+
+    Cycle::Again(wait_for)
+}
+
+/// Reports the stop and ends the loop.
+fn stop(observer: &Arc<dyn ProgressObserver>) -> Result<(), DaemonError> {
+    observer.info("stopping");
+    Ok(())
 }
 
 /// Runs one backup pass and reports how long to wait before the next one.

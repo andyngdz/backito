@@ -4,6 +4,7 @@ mod backup;
 mod daemon;
 mod health;
 mod init;
+mod list;
 mod restore;
 mod verify;
 mod walg;
@@ -95,6 +96,11 @@ pub async fn dispatch(cli: Cli) -> Result<CommandReport, CliError> {
         }
 
         Command::Walg(walg) => walg::run(walg, &choice).await,
+
+        Command::List { keys_only } => {
+            let context = load(&choice)?;
+            list::run(&context.settings, keys_only.into()).await
+        }
 
         Command::Health => {
             let context = load(&choice)?;

@@ -105,6 +105,20 @@ pub enum Command {
     ///   backito daemon --config prod.toml
     Daemon,
 
+    /// List the archives stored for this database, oldest first.
+    ///
+    /// Prints one key per line with its size and age, so a key can be copied
+    /// straight into `--archive`. Reads the bucket and writes nothing.
+    ///
+    /// Examples:
+    ///   backito list
+    ///   backito list --keys-only
+    List {
+        /// Print only the keys, for piping into another command.
+        #[arg(long)]
+        keys_only: bool,
+    },
+
     /// Report whether a recent enough backup exists. Exits 1 when none does.
     ///
     /// Built for a container healthcheck. It asks the bucket rather than a local

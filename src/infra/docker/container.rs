@@ -65,6 +65,9 @@ const STDERR_KEEP_BYTES: usize = 2000;
 pub async fn run_docker(operation: &str, args: &[&str]) -> Result<Vec<u8>, DockerError> {
     let output = Command::new(DOCKER_BIN)
         .args(args)
+        // `docker cp` moves the whole archive, so this is not always a quick
+        // call. An abandoned one should not outlive the process.
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .output()
         .await

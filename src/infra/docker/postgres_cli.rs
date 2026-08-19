@@ -103,6 +103,12 @@ pub async fn dump_to_file(target: &PostgresTarget, destination: &Path) -> Result
     // stderr, because it only drains the handles that are actually pipes.
     let child = Command::new(DOCKER_BIN)
         .args(&args)
+        // A dump can run for an hour, and the daemon abandons the pass when it
+        // is asked to stop. Without this the `docker` client outlives the
+        // process that started it and keeps an exec open against a production
+        // database. It kills the client rather than the server-side process, so
+        // it bounds the leak rather than removing it entirely.
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::from(file))
         .stderr(Stdio::piped())
@@ -161,6 +167,7 @@ pub async fn restore_in_container(
 
     let output = Command::new(DOCKER_BIN)
         .args(&args)
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .output()
         .await

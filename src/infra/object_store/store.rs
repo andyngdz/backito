@@ -8,6 +8,7 @@ use futures::TryStreamExt;
 // `list` sits on the trait itself; the convenience wrappers this crate uses
 // elsewhere are on ObjectStoreExt. Imported anonymously so it cannot collide
 // with this module's own ObjectStore.
+use object_store::ObjectMeta;
 use object_store::ObjectStore as _;
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 
@@ -59,21 +60,35 @@ impl ObjectStore {
     /// bucket-scoped credential is allowed to make, so it proves the endpoint,
     /// the key, and the bucket name in one request.
     pub async fn list_keys(&self) -> Result<Vec<String>, ObjectStoreError> {
-        let objects: Vec<_> = self
-            .bucket
-            .list(None)
-            .try_collect()
-            .await
-            .map_err(|source| ObjectStoreError::Request {
-                operation: StoreOperation::List.as_str().to_owned(),
-                key: String::new(),
-                source: Box::new(source),
-            })?;
-
-        Ok(objects
+        Ok(self
+            .list_objects()
+            .await?
             .into_iter()
             .map(|object| object.location.to_string())
             .collect())
+    }
+
+    /// Every archive this tool wrote for `label`, oldest first.
+    ///
+    /// Sizes come from the listing rather than a `head` per object, so asking
+    /// what a bucket holds costs the same one request whether it holds three
+    /// archives or three hundred.
+    pub async fn list_archives(&self, label: &str) -> Result<Vec<StoredArchive>, ObjectStoreError> {
+        let mut archives: Vec<StoredArchive> = self
+            .list_objects()
+            .await?
+            .into_iter()
+            .filter(|object| ArchiveName::belongs_to(object.location.as_ref(), label))
+            .map(|object| StoredArchive {
+                name: ArchiveName::from_key(object.location.to_string()),
+                bytes: object.size,
+            })
+            .collect();
+
+        // Within one label the stamp sorts chronologically, so key order is age
+        // order and no metadata request is needed to establish it.
+        archives.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+        Ok(archives)
     }
 
     /// The newest archive this tool wrote for `label`.
@@ -83,19 +98,34 @@ impl ObjectStore {
     /// from another label or an older scheme are excluded first, because
     /// sorting across two prefixes is NOT chronological.
     pub async fn latest_archive(&self, label: &str) -> Result<ArchiveName, ObjectStoreError> {
-        let mut archives: Vec<String> = self
-            .list_keys()
+        self.list_archives(label)
             .await?
-            .into_iter()
-            .filter(|key| ArchiveName::belongs_to(key, label))
-            .collect();
-        archives.sort_unstable();
-
-        archives
             .pop()
-            .map(ArchiveName::from_key)
+            .map(|archive| archive.name)
             .ok_or_else(|| ObjectStoreError::NoArchives {
                 bucket: self.name.clone(),
             })
     }
+
+    /// Lists the bucket's objects with the metadata the listing already carries.
+    async fn list_objects(&self) -> Result<Vec<ObjectMeta>, ObjectStoreError> {
+        self.bucket
+            .list(None)
+            .try_collect()
+            .await
+            .map_err(|source| ObjectStoreError::Request {
+                operation: StoreOperation::List.as_str().to_owned(),
+                key: String::new(),
+                source: Box::new(source),
+            })
+    }
+}
+
+/// One archive as the bucket holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredArchive {
+    /// Key the archive is stored under.
+    pub name: ArchiveName,
+    /// Size the store reports for it.
+    pub bytes: u64,
 }
