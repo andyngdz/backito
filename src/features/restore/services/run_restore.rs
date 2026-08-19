@@ -1,13 +1,12 @@
 //! Loads an archive into a real database, once the guard allows it.
 
-use humansize::{BINARY, format_size};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::super::{RestoreError, RestoreOutcome};
 use super::guard::{RestoreAuthorisation, ensure_writable, populated_tables};
 use crate::domain::ArchiveName;
-use crate::features::progress::{ProgressObserver, Step};
+use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::docker::{
     PostgresTarget, copy_into, require_running, restore_in_container, trailing_stderr,
 };
@@ -53,7 +52,7 @@ pub async fn run_restore(
     observer.transfer_started(Some(bytes));
     store.download_file(archive.as_str(), &archive_path).await?;
     observer.transfer_finished();
-    observer.step_finished(Step::Download, &format_size(bytes, BINARY));
+    observer.step_finished(Step::Download, &human_bytes(bytes));
 
     observer.step_started(Step::Restore);
     copy_into(&target.container, &archive_path, ARCHIVE_IN_CONTAINER).await?;

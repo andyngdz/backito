@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use super::super::dto::CommandReport;
 use super::super::{CliError, ExitStatus};
-use crate::domain::ArchiveName;
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
 use crate::features::progress::ProgressObserver;
@@ -25,6 +24,7 @@ pub async fn run(
     let workspace = Workspace::acquire("backito-verify-")
         .map_err(|source| CliError::WorkingDirectory { source })?;
 
+    let archive = super::parse_archive(archive, &settings.database.label)?;
     let container = resolve(&settings.database.container).await?;
 
     let outcome = run_verify(
@@ -32,7 +32,7 @@ pub async fn run(
         &store,
         &target_for(&settings.database, container),
         workspace.path(),
-        archive.map(ArchiveName::from_key),
+        archive,
         observer,
     )
     .await?;

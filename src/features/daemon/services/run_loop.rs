@@ -9,7 +9,7 @@ use super::run_daemon::{PassOutcome, run_pass};
 use crate::domain::Interval;
 use crate::features::backup::target_for;
 use crate::features::container::resolve;
-use crate::features::progress::ProgressObserver;
+use crate::features::progress::{ProgressObserver, human_bytes};
 use crate::features::verify::run_verify;
 use crate::infra::config::Settings;
 use crate::infra::object_store::ObjectStore;
@@ -86,6 +86,19 @@ async fn backup_pass(
         Ok(PassOutcome::BackedUp { stored, deleted }) => {
             observer.info(&format!("stored {stored}, deleted {deleted} old archives"));
             settings.schedule.backup_interval
+        }
+        Ok(PassOutcome::Truncated {
+            stored,
+            local_bytes,
+            stored_bytes,
+        }) => {
+            observer.warn(&format!(
+                "{stored} uploaded as {} but was {} on disk, so it may not restore; \
+                 kept every older archive and skipped retention",
+                human_bytes(stored_bytes),
+                human_bytes(local_bytes)
+            ));
+            RETRY_AFTER
         }
         Err(failure) => {
             observer.warn(&format!(

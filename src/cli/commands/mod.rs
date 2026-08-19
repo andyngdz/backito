@@ -18,6 +18,7 @@ use super::CliError;
 use super::args::{Cli, Command};
 use super::dto::CommandReport;
 use super::reporter::TerminalReporter;
+use crate::domain::ArchiveName;
 use crate::features::progress::ProgressObserver;
 use crate::infra::config::{
     CONFIG_FILENAME, ConfigError, EnvSecretSource, EnvSource, Settings, TomlSource,
@@ -129,4 +130,25 @@ fn load(choice: &SourceChoice) -> Result<Context, CliError> {
         settings: choice.settings()?,
         observer: Arc::new(TerminalReporter::new()),
     })
+}
+
+/// Reads a `--archive` value, or `None` to take the newest.
+///
+/// Both `verify` and `restore` accept the flag, and both turn the key into a
+/// local filename the moment the archive downloads, so the check belongs here
+/// rather than in either command.
+pub fn parse_archive(
+    archive: Option<String>,
+    label: &str,
+) -> Result<Option<ArchiveName>, CliError> {
+    let Some(key) = archive else {
+        return Ok(None);
+    };
+
+    ArchiveName::parse_for(&key, label)
+        .map(Some)
+        .ok_or_else(|| CliError::UnknownArchive {
+            key,
+            label: label.to_owned(),
+        })
 }

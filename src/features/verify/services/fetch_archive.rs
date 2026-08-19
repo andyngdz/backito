@@ -1,13 +1,12 @@
 //! Fetches an archive from the bucket and checks it against its sidecar.
 
-use humansize::{BINARY, format_size};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::super::{ChecksumOutcome, VerifyError};
 use crate::domain::{ArchiveDigest, ArchiveName};
 use crate::features::backup::digest_file;
-use crate::features::progress::{ProgressObserver, Step};
+use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::object_store::ObjectStore;
 
 /// Downloads `archive` to `destination` and compares it to its stored digest.
@@ -22,7 +21,7 @@ pub async fn fetch_archive(
     observer.transfer_started(Some(expected_bytes));
     store.download_file(archive.as_str(), destination).await?;
     observer.transfer_finished();
-    observer.step_finished(Step::Download, &format_size(expected_bytes, BINARY));
+    observer.step_finished(Step::Download, &human_bytes(expected_bytes));
 
     observer.step_started(Step::Checksum);
     observer.transfer_started(Some(expected_bytes));

@@ -82,7 +82,7 @@ fn a_missing_archive_points_at_the_bucket_contents_not_the_credential() {
     let failure = CliError::Verify(VerifyError::Storage(store_missing_key()));
 
     let hint = failure.hint().expect("this failure must carry a hint");
-    assert!(hint.contains("list the bucket"));
+    assert!(hint.contains("backito list"));
     assert!(hint.contains("--archive"));
     assert!(!hint.contains("credential"));
 }
@@ -101,7 +101,7 @@ fn a_restore_from_a_missing_archive_carries_the_same_hint() {
     let failure = CliError::Restore(RestoreError::Storage(store_missing_key()));
 
     let hint = failure.hint().expect("this failure must carry a hint");
-    assert!(hint.contains("list the bucket"));
+    assert!(hint.contains("backito list"));
 }
 
 #[test]

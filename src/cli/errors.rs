@@ -73,6 +73,19 @@ pub enum CliError {
         /// Underlying io failure.
         source: std::io::Error,
     },
+
+    /// `--archive` named a key this tool did not write for the configured label.
+    ///
+    /// Checked before anything downloads, because the key becomes a local
+    /// filename: one carrying a path segment would write outside the scratch
+    /// directory.
+    #[error("--archive {key} is not an archive backito wrote for label {label}")]
+    UnknownArchive {
+        /// The key as typed.
+        key: String,
+        /// Label the config pins.
+        label: String,
+    },
 }
 
 impl CliError {
@@ -104,6 +117,13 @@ impl CliError {
             Self::Config(ConfigError::ParseInterval { .. }) => {
                 Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
             }
+            Self::Config(ConfigError::RetainsNothing) => {
+                Some("set retain to how many archives to keep, at least 1")
+            }
+            Self::UnknownArchive { .. } => Some(
+                "run `backito list` to see the keys that exist, \
+                 or drop --archive to use the newest",
+            ),
             Self::Walg(WalgError::NotConfigured) => {
                 Some("add a [walg] section with an s3_prefix, or leave WAL archiving off")
             }
@@ -131,16 +151,22 @@ impl CliError {
     /// wrong thing.
     fn storage_hint(failure: &ObjectStoreError) -> &'static str {
         if failure.is_missing_object() {
-            return "no object at that key -- list the bucket to see which archives exist, \
+            return "no object at that key -- run `backito list` to see which archives exist, \
                   or drop --archive to use the newest";
         }
 
         match failure {
+            // An empty bucket answered the request, so the endpoint, the
+            // credential, and the name are all already proven. Sending the user
+            // to check them hides the one thing that is actually true: nothing
+            // has been backed up yet.
+            ObjectStoreError::NoArchives { .. } => {
+                "no archives for this label yet -- run `backito backup` to take the first one"
+            }
             ObjectStoreError::Configure { .. }
             | ObjectStoreError::Request { .. }
             | ObjectStoreError::LocalStream { .. }
-            | ObjectStoreError::LocalFile { .. }
-            | ObjectStoreError::NoArchives { .. } => {
+            | ObjectStoreError::LocalFile { .. } => {
                 "check the bucket name, endpoint, and that the credential covers this bucket"
             }
         }

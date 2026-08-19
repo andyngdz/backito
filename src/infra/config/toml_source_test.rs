@@ -1,4 +1,5 @@
 use super::TomlSource;
+use crate::infra::config::schedule::DEFAULT_RETAIN;
 use crate::infra::config::{
     ConfigCore, ConfigError, ConfigSource, ContainerSource, ScheduleSettings,
 };
@@ -193,7 +194,7 @@ fn a_config_without_a_schedule_table_gets_the_defaults() {
     assert_eq!(core.schedule, ScheduleSettings::default());
     assert_eq!(core.schedule.backup_interval.as_secs(), 24 * 60 * 60);
     assert_eq!(core.schedule.verify_interval.as_secs(), 7 * 24 * 60 * 60);
-    assert_eq!(core.schedule.retain, 7);
+    assert_eq!(core.schedule.retain, DEFAULT_RETAIN);
 }
 
 #[test]

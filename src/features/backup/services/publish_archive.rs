@@ -1,13 +1,12 @@
 //! Hashes the archive and sends it, with its checksum sidecar, to the bucket.
 
-use humansize::{BINARY, format_size};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::super::BackupError;
 use super::checksum::digest_file;
 use crate::domain::{ArchiveDigest, ArchiveName};
-use crate::features::progress::{ProgressObserver, Step};
+use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::object_store::ObjectStore;
 
 /// What reached the bucket.
@@ -51,7 +50,7 @@ pub async fn publish_archive(
     observer.transfer_finished();
 
     let stored_bytes = store.object_size(archive.as_str()).await?;
-    observer.step_finished(Step::Upload, &format_size(stored_bytes, BINARY));
+    observer.step_finished(Step::Upload, &human_bytes(stored_bytes));
 
     Ok(PublishedArchive {
         digest,

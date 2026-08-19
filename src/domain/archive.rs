@@ -44,8 +44,27 @@ impl ArchiveName {
     }
 
     /// Adopts an existing object key, e.g. one listed from the bucket.
+    ///
+    /// Trusted input only. A key that came from a person goes through
+    /// [`ArchiveName::parse_for`] instead, which checks it before it reaches a
+    /// path join.
     pub fn from_key(key: impl Into<String>) -> Self {
         Self(key.into())
+    }
+
+    /// Adopts a key a person typed, refusing anything this tool did not write
+    /// for `label`.
+    ///
+    /// A key becomes a local filename when the archive is downloaded, so an
+    /// unchecked one carrying `../` escapes the scratch directory and writes
+    /// wherever it points. Matching the label is not enough on its own:
+    /// `app-backup-../../x.dump` clears that test. The stamp has to be a stamp,
+    /// which is what rules out a separator, and it also catches the common slip
+    /// of passing the `.sha256` sidecar instead of the dump.
+    pub fn parse_for(key: &str, label: &str) -> Option<Self> {
+        let stamp = Self::belongs_to(key, label).then(|| stamp_of(key))??;
+
+        is_stamp(stamp).then(|| Self(key.to_owned()))
     }
 
     /// The key of the checksum sidecar that travels with this archive.
@@ -78,14 +97,38 @@ impl ArchiveName {
     /// request per candidate. `None` for a key that is not one of ours, which is
     /// the same question `belongs_to` answers and the reason this cannot guess.
     pub fn stamp(&self) -> Option<&str> {
-        let separator = format!("-{ARCHIVE_STEM}-");
-        let extension = format!(".{}", ArchiveFile::Dump.extension());
-
-        // From the right: a label may itself contain `-backup-`, and the stamp
-        // is always the last thing before the extension.
-        let (_, after_stem) = self.0.rsplit_once(&separator)?;
-        after_stem.strip_suffix(&extension)
+        stamp_of(&self.0)
     }
+}
+
+/// The stamp text in `key`, without checking that it reads as a time.
+///
+/// From the right: a label may itself contain `-backup-`, and the stamp is
+/// always the last thing before the extension.
+fn stamp_of(key: &str) -> Option<&str> {
+    let separator = format!("-{ARCHIVE_STEM}-");
+    let extension = format!(".{}", ArchiveFile::Dump.extension());
+
+    let (_, after_stem) = key.rsplit_once(&separator)?;
+    after_stem.strip_suffix(&extension)
+}
+
+/// True when `text` has the shape `ArchiveName::new` writes: `YYYYmmdd-HHMM`.
+///
+/// Shape only, not a calendar check. Reading it as a time is the scheduler's
+/// job; here it exists so a key that reached a path join cannot carry a
+/// directory separator or a `..` segment.
+fn is_stamp(text: &str) -> bool {
+    let Some((date, time)) = text.split_once('-') else {
+        return false;
+    };
+
+    date.len() == 8
+        && time.len() == 4
+        && date
+            .bytes()
+            .chain(time.bytes())
+            .all(|byte| byte.is_ascii_digit())
 }
 
 impl fmt::Display for ArchiveName {

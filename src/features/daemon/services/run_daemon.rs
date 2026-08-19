@@ -38,6 +38,20 @@ pub async fn run_pass(
 
     let stamp = Timestamp::now().strftime(STAMP_FORMAT).to_string();
     let outcome = run_backup(settings, store, working_dir, &stamp, Arc::clone(&observer)).await?;
+
+    // Retention deletes on the strength of the archive that just landed, so it
+    // only runs once that archive is known whole. Evicting a restorable copy in
+    // favour of a truncated one is the single mistake this tool must not make,
+    // and the old archives are exactly what recovery needs while the short
+    // upload is investigated.
+    if !outcome.sizes_match() {
+        return Ok(PassOutcome::Truncated {
+            stored: outcome.archive.to_string(),
+            local_bytes: outcome.local_bytes,
+            stored_bytes: outcome.stored_bytes,
+        });
+    }
+
     let pruned = prune_archives(store, &settings.database.label, settings.schedule.retain).await?;
 
     Ok(PassOutcome::BackedUp {
@@ -55,6 +69,16 @@ pub enum PassOutcome {
         stored: String,
         /// Archives deleted to honour retention.
         deleted: usize,
+    },
+    /// The archive uploaded, but the store reports a different size than was
+    /// sent. Retention was skipped, so every older archive is still there.
+    Truncated {
+        /// Key the archive landed under.
+        stored: String,
+        /// Size of the archive on disk.
+        local_bytes: u64,
+        /// Size the store reports for the uploaded object.
+        stored_bytes: u64,
     },
     /// A recent enough archive already exists.
     Deferred {

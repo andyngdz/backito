@@ -66,4 +66,14 @@ pub enum ConfigError {
     /// `[database]` names neither a container nor a service.
     #[error("[database] needs either container or service to say which container runs Postgres")]
     ContainerUnspecified,
+
+    /// `[schedule]` keeps no archives at all.
+    ///
+    /// Retention runs immediately after a backup lands, so zero would delete the
+    /// archive that pass just wrote along with every older one. No deployment
+    /// wants that, and the cost of accepting the typo is the whole bucket.
+    #[error(
+        "[schedule] retain is 0, which would delete every archive including the one just taken"
+    )]
+    RetainsNothing,
 }

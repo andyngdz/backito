@@ -4,7 +4,7 @@
 //! so `backito backup > key.txt` yields a usable key and a piped run shows its
 //! progress in the terminal rather than in the file.
 
-use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -151,7 +151,7 @@ impl ProgressObserver for TerminalReporter {
 
 /// Renders a byte count for a person.
 pub fn human_bytes(bytes: u64) -> String {
-    HumanBytes(bytes).to_string()
+    crate::features::progress::human_bytes(bytes)
 }
 
 #[cfg(test)]

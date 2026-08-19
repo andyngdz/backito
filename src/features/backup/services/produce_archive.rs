@@ -1,11 +1,10 @@
 //! Writes the archive and proves it is not truncated before anything is sent.
 
-use humansize::{BINARY, format_size};
 use std::path::Path;
 use std::sync::Arc;
 
 use super::super::BackupError;
-use crate::features::progress::{ProgressObserver, Step};
+use crate::features::progress::{ProgressObserver, Step, human_bytes};
 use crate::infra::docker::{PostgresTarget, count_table_data_entries, dump_to_file};
 
 /// Fewest tables-with-data an archive must list to count as complete. One table
@@ -33,7 +32,7 @@ pub async fn produce_archive(
     observer.step_started(Step::Dump);
     dump_to_file(target, archive_path).await?;
     let bytes = file_size(archive_path)?;
-    observer.step_finished(Step::Dump, &format_size(bytes, BINARY));
+    observer.step_finished(Step::Dump, &human_bytes(bytes));
 
     observer.step_started(Step::InspectArchive);
     let tables = inspect_archive(inspect_image, archive_path).await?;
