@@ -129,6 +129,10 @@ impl CliError {
             Self::Config(ConfigError::ParseInterval { .. }) => {
                 Some("write intervals as a number and a unit: 30s, 15m, 24h, 7d")
             }
+            Self::Config(ConfigError::UnusableEndpoint { .. }) => Some(
+                "set [storage].endpoint to the real URL, e.g. \
+                 https://<your-account-id>.r2.cloudflarestorage.com with the id filled in",
+            ),
             Self::Config(ConfigError::RetainsNothing) => {
                 Some("set retain to how many archives to keep, at least 1")
             }

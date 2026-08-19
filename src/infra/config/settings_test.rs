@@ -1,4 +1,4 @@
-use super::Settings;
+use super::{Settings, check_endpoint};
 use crate::domain::Interval;
 use crate::infra::config::{
     ConfigCore, ConfigError, ConfigSource, ContainerSource, DatabaseSettings, ScheduleSettings,
@@ -121,4 +121,42 @@ fn a_wal_token_without_wal_archiving_is_dropped() {
             .expect("assemble");
 
     assert!(settings.walg_runtime().is_none());
+}
+
+#[test]
+fn the_placeholder_endpoint_init_writes_is_refused_with_a_sentence() {
+    // `object_store` panics on an unparsable URI rather than returning, so
+    // without this the first command after `init` ends in a library stack trace.
+    let failure = check_endpoint("https://<account-id>.r2.cloudflarestorage.com")
+        .expect_err("the placeholder must not load");
+
+    assert!(matches!(failure, ConfigError::UnusableEndpoint { .. }));
+}
+
+#[test]
+fn a_real_endpoint_loads() {
+    for usable in [
+        "https://abc123.r2.cloudflarestorage.com",
+        "https://s3.eu-central-1.amazonaws.com",
+        "http://127.0.0.1:9000",
+        "http://minio:9000",
+    ] {
+        assert!(check_endpoint(usable).is_ok(), "{usable} should load");
+    }
+}
+
+#[test]
+fn an_endpoint_with_no_scheme_or_no_host_is_refused() {
+    for unusable in [
+        "r2.cloudflarestorage.com",
+        "s3://bucket",
+        "https://",
+        "",
+        "https://my endpoint.com",
+    ] {
+        assert!(
+            check_endpoint(unusable).is_err(),
+            "{unusable} should be refused"
+        );
+    }
 }
