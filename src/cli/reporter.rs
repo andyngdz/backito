@@ -5,6 +5,7 @@
 //! progress in the terminal rather than in the file.
 
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use std::io::{self, Write};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -38,15 +39,47 @@ const INFO_MARK: &str = "-";
 /// not a terminal, which is the case a scheduled run cares about, so a flag
 /// would only be able to hide the warnings and errors that a cron mail exists
 /// to deliver.
+///
+/// Lines (finished steps, warnings, info) do not go through the bar, because
+/// indicatif drops `println` on a hidden bar, and a bar is hidden whenever
+/// stderr is not a terminal. They go to `lines` instead, with the bar
+/// suspended so a live spinner does not draw over them.
 pub struct TerminalReporter {
     bar: Mutex<ProgressBar>,
+    lines: Mutex<Box<dyn Write + Send>>,
 }
 
 impl TerminalReporter {
     /// Builds a reporter drawing to stderr.
     pub fn new() -> Self {
+        Self::with_lines(Box::new(io::stderr()))
+    }
+
+    /// Builds a reporter whose lines go to `lines` rather than stderr.
+    pub(crate) fn with_lines(lines: Box<dyn Write + Send>) -> Self {
         Self {
             bar: Mutex::new(ProgressBar::hidden()),
+            lines: Mutex::new(lines),
+        }
+    }
+
+    /// Writes one line, suspending the bar around it.
+    ///
+    /// A poisoned lock means another thread panicked mid-draw; the line still
+    /// has to reach the user, so take the inner value either way.
+    fn print_line(&self, line: &str) {
+        let current = self
+            .bar
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut sink = self
+            .lines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let written = current.suspend(|| writeln!(sink, "{line}"));
+        if written.is_err() {
+            // The sink is gone; a terminal-attached bar can still draw it.
+            current.println(line);
         }
     }
 
@@ -84,8 +117,8 @@ impl ProgressObserver for TerminalReporter {
             format!("{DONE_MARK} {} - {detail}", step.label())
         };
 
+        self.print_line(&line);
         if let Ok(current) = self.bar.lock() {
-            current.println(line);
             current.finish_and_clear();
         }
     }
@@ -121,21 +154,11 @@ impl ProgressObserver for TerminalReporter {
     }
 
     fn warn(&self, message: &str) {
-        // A poisoned lock means another thread panicked mid-draw; the warning
-        // still has to reach the user, so take the inner bar either way.
-        let current = self
-            .bar
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        current.println(format!("{WARN_MARK} {message}"));
+        self.print_line(&format!("{WARN_MARK} {message}"));
     }
 
     fn info(&self, message: &str) {
-        let current = self
-            .bar
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        current.println(format!("{INFO_MARK} {message}"));
+        self.print_line(&format!("{INFO_MARK} {message}"));
     }
 
     fn metered_reader(&self) -> MeteredReader {
